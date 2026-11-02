@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LEVIATHAN · Roguelite cooperativo</title>
+  <link rel="icon" type="image/png" sizes="32" href="/icons/icon-32.png">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#04070b">
+  <style>
+    /* ===== LEVIATHAN · Interfaz "Dead Cells × Call of Duty" =====
+       Paneles oscuros, orgánicos y de alto contraste (bisel grueso, esquinas astilladas, grano)
+       + navegación táctica limpia (columna de modos, barra de estado, tipografía condensada militar).
+       Botones en forma de J y tablas de "hoja táctica" con filas/columnas numeradas. */
+    :root {
+      --bg: #050608; --panel: #0c0f13; --panel2: #11161c; --line: #232c35; --line2: #344250;
+      --ink: #e9eef2; --ink2: #9aa9b5; --ink3: #5d6b77;
+      --amber: #ffb020; --amber2: #ff7a00; --teal: #39d7ff; --blood: #ff3b4a; --bio: #5dff7a;
+      --mil: 'Bahnschrift SemiCondensed', 'Bahnschrift', 'Agency FB', 'Arial Narrow', 'Roboto Condensed', 'Segoe UI', sans-serif;
+      --mono: 'Cascadia Mono', Consolas, 'Courier New', monospace;
+    }
+    html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; font-family: var(--mil); color: var(--ink); }
+    #game { position: absolute; inset: 0; }
+    .hidden { display: none !important; }
+
+    /* Fondo vivo: penumbra orgánica (biomasa roja abajo, luz fría arriba), grano y brasas */
+    .stage {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 10;
+      background:
+        radial-gradient(ellipse 70% 45% at 50% 115%, rgba(150,18,30,.45), transparent 70%),
+        radial-gradient(ellipse 60% 40% at 15% -10%, rgba(57,215,255,.14), transparent 70%),
+        radial-gradient(ellipse 120% 90% at 50% 50%, #0b0e12 0%, #030405 75%);
+    }
+    .stage::before { /* grano de película */
+      content: ''; position: absolute; inset: -50%; pointer-events: none; opacity: .07;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+      animation: grain 1.2s steps(6) infinite;
+    }
+    .stage::after { /* brasas ascendentes */
+      content: ''; position: absolute; inset: 0; pointer-events: none; opacity: .55;
+      background-image: radial-gradient(2px 2px at 12% 80%, #ff7a00, transparent), radial-gradient(1.5px 1.5px at 33% 90%, #ffb020, transparent),
+        radial-gradient(2px 2px at 58% 85%, #ff3b4a, transparent), radial-gradient(1.5px 1.5px at 77% 95%, #ffb020, transparent), radial-gradient(1px 1px at 90% 70%, #39d7ff, transparent);
+      background-size: 100% 100%; animation: embers 9s linear infinite;
+    }
+    @keyframes grain { 0% { transform: translate(0,0) } 25% { transform: translate(-3%,2%) } 50% { transform: translate(2%,-3%) } 75% { transform: translate(-2%,-1%) } 100% { transform: translate(1%,3%) } }
+    @keyframes embers { from { transform: translateY(0) } to { transform: translateY(-60%) } }
+    .brandmark { position: absolute; bottom: -4vh; left: 50%; transform: translateX(-50%); font: 900 22vw/1 var(--mil); letter-spacing: 2vw;
+      color: transparent; -webkit-text-stroke: 1px rgba(255,255,255,.035); pointer-events: none; white-space: nowrap; user-select: none; }
+
+    /* Panel "Dead Cells": bisel grueso, esquinas astilladas, luz interior */
+    .panel {
+      position: relative; background: linear-gradient(180deg, var(--panel2), var(--panel));
+      border: 2px solid var(--line); box-shadow: inset 0 1px 0 rgba(255,255,255,.06), inset 0 0 40px rgba(0,0,0,.6), 0 18px 50px rgba(0,0,0,.65);
+      clip-path: polygon(0 10px, 10px 0, calc(100% - 26px) 0, 100% 26px, 100% calc(100% - 10px), calc(100% - 10px) 100%, 18px 100%, 0 calc(100% - 18px));
+    }
+    .panel::before { /* filo superior táctico */
+      content: ''; position: absolute; left: 10px; right: 26px; top: 0; height: 2px; background: linear-gradient(90deg, var(--amber), transparent 70%);
+    }
+    .kicker { font: 600 11px var(--mono); letter-spacing: 3px; color: var(--amber); text-transform: uppercase; }
+    .title { margin: 2px 0 0; font: 800 54px/0.95 var(--mil); letter-spacing: 12px; color: var(--ink); text-transform: uppercase;
+      text-shadow: 0 0 1px #fff, 0 6px 24px rgba(255,59,74,.35); }
+    .title b { color: var(--blood); font-weight: 800; }
+
+    /* Botón J: trazo en gancho (cola inferior izquierda) + barrido de luz al pasar */
+    .j {
+      position: relative; overflow: hidden; border: 0; cursor: pointer; text-transform: uppercase;
+      clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 11px 100%, 0 calc(100% - 11px), 0 45%, 14px 45%);
+      background: linear-gradient(90deg, var(--amber2), var(--amber)); color: #160c00;
+      font: 800 13px var(--mil); letter-spacing: 3px; padding: 10px 20px 10px 26px; transition: transform .12s, filter .12s;
+    }
+    .j::after { content: ''; position: absolute; top: 0; bottom: 0; width: 40%; left: -60%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.45), transparent); transform: skewX(-20deg); transition: left .35s; }
+    .j:hover:not(:disabled) { transform: translateX(3px); filter: brightness(1.12); }
+    .j:hover:not(:disabled)::after { left: 120%; }
+    .j:active:not(:disabled) { transform: translateX(1px) scale(.98); }
+    .j:disabled { opacity: .4; cursor: default; }
+    .j.alt { background: linear-gradient(90deg, rgba(255,255,255,.09), rgba(255,255,255,.02)); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line2); }
+    .j.alt:hover:not(:disabled) { background: linear-gradient(90deg, rgba(255,176,32,.22), rgba(255,176,32,.04)); color: #fff; }
+    .j.small { padding: 6px 12px 6px 18px; font-size: 11px; letter-spacing: 2px; }
+    .j.big { padding: 18px 34px 18px 40px; font-size: 18px; letter-spacing: 6px; margin-top: 12px; }
+    .j.danger { background: linear-gradient(90deg, #8a0f18, var(--blood)); color: #fff; }
+
+    /* ---------- Login ---------- */
+    #login .card { width: min(500px, 92vw); padding: 30px 38px 26px 64px; box-sizing: border-box; }
+    #login .card .rows { position: absolute; left: 22px; top: 30px; bottom: 26px; width: 24px; overflow: hidden;
+      font: 10px/28px var(--mono); color: #33404b; text-align: right; border-right: 1px solid var(--line); padding-right: 6px; white-space: pre; }
+    #login .cols { display: flex; margin: 0 0 14px; font: 10px var(--mono); color: var(--ink3); }
+    #login .cols span { flex: 1; border-left: 1px solid var(--line); padding-left: 6px; }
+    #login .sub { margin: 8px 0 22px; font: 12px var(--mono); letter-spacing: 3px; color: var(--ink2); }
+    #login label { display: block; font: 11px var(--mono); letter-spacing: 3px; color: var(--ink2); margin: 14px 0 6px; }
+    #login input[type=text], #login input:not([type]), #login input[type=password] {
+      width: 100%; box-sizing: border-box; padding: 12px 14px; background: #06080a; border: 1px solid var(--line2); border-left: 3px solid var(--amber);
+      color: #fff; font: 600 18px var(--mil); letter-spacing: 2px; outline: none; transition: border-color .15s, box-shadow .15s; }
+    #login input:focus { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber), 0 0 18px rgba(255,176,32,.25); }
+    #login input[type=password] { letter-spacing: 5px; }
+    #login .chk { display: flex; align-items: center; gap: 8px; letter-spacing: 1px; font-size: 12px; color: var(--ink2); }
+    #login .row { display: flex; gap: 10px; margin-top: 22px; }
+    #login .row button { flex: 1; padding: 14px; font-size: 15px; letter-spacing: 5px; }
+    #login button:disabled { opacity: .5; cursor: wait; }
+    #login .err { color: var(--blood); min-height: 20px; margin-top: 12px; font: 600 13px var(--mil); letter-spacing: 1px; }
+    #login .help { margin-top: 14px; font: 11px/1.8 var(--mono); color: var(--ink3); border-top: 1px solid var(--line); padding-top: 10px; }
+    #login .help kbd, .hints kbd { display: inline-block; min-width: 14px; padding: 0 5px; margin: 0 1px; font: 700 10px var(--mono); color: #111; background: #c9d2d9;
+      border-bottom: 2px solid #6d7a85; border-radius: 2px; text-align: center; }
+
+    /* ---------- Centro de mando ---------- */
+    #menu { z-index: 9; }
+    #menu .shell { width: min(1180px, 96vw); height: min(720px, 94vh); display: grid; grid-template-rows: auto 1fr auto; grid-template-columns: 280px 1fr; gap: 14px; }
+    #menu .bar { grid-column: 1 / 3; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 20px 12px 22px; }
+    #menu .bar .title { font-size: 34px; letter-spacing: 9px; }
+    #menu .who { display: flex; align-items: center; gap: 16px; font: 600 14px var(--mil); letter-spacing: 1px; }
+    #menu .stat { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
+    #menu .stat small { font: 10px var(--mono); letter-spacing: 2px; color: var(--ink3); }
+    #menu .stat b { font-size: 18px; letter-spacing: 1px; }
+    #menu .stat.cred b { color: var(--bio); }
+    #menu .stat.cyc b { color: var(--teal); }
+    #menu .nav { padding: 18px 0 18px 0; display: flex; flex-direction: column; gap: 2px; }
+    #menu .nav .kicker { padding: 0 20px 10px; }
+    #menu .tab { all: unset; cursor: pointer; position: relative; padding: 16px 20px 16px 26px; font: 800 20px var(--mil); letter-spacing: 3px; text-transform: uppercase; color: var(--ink2);
+      border-left: 4px solid transparent; transition: background .12s, color .12s, padding .12s; }
+    #menu .tab small { display: block; font: 11px var(--mono); letter-spacing: 1px; color: var(--ink3); text-transform: none; margin-top: 3px; }
+    #menu .tab:hover { color: #fff; background: linear-gradient(90deg, rgba(255,255,255,.06), transparent); padding-left: 32px; }
+    #menu .tab.on { color: #fff; border-left-color: var(--amber); background: linear-gradient(90deg, rgba(255,176,32,.18), transparent 85%); }
+    #menu .tab.on::after { content: '▶'; position: absolute; right: 16px; top: 50%; transform: translateY(-50%); color: var(--amber); font-size: 12px; }
+    #menu .tab:disabled { opacity: .5; }
+    #menu .season { margin: auto 14px 0; padding: 14px 16px; border: 1px solid #3a1a22; background: linear-gradient(160deg, rgba(150,18,30,.35), rgba(10,4,6,.6));
+      clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%); }
+    #menu .season .kicker { color: #ff8a95; padding: 0; }
+    #menu .season h4 { margin: 4px 0 6px; font: 800 18px var(--mil); letter-spacing: 2px; text-transform: uppercase; }
+    #menu .season p { margin: 0; font: 12px/1.5 var(--mil); color: #d6b9bd; }
+    #menu .season .meter { height: 6px; background: #1a0a0d; margin-top: 10px; position: relative; }
+    #menu .season .meter i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, var(--blood), var(--amber)); }
+    #menu .season small { display: block; margin-top: 6px; font: 10px var(--mono); color: #b08a90; letter-spacing: 1px; }
+    #menu .content { padding: 22px 26px 18px 28px; overflow: auto; }
+    #menu .content h3 { margin: 4px 0 8px; font: 800 30px var(--mil); letter-spacing: 6px; text-transform: uppercase; }
+    #menu .desc { color: var(--ink2); line-height: 1.6; max-width: 720px; font-size: 15px; }
+    #menu .row { display: flex; gap: 12px; align-items: center; margin: 12px 0; flex-wrap: wrap; }
+    #menu input, #menu select { background: #06080a; border: 1px solid var(--line2); border-left: 3px solid var(--teal); color: #fff; padding: 9px 12px;
+      font: 600 15px var(--mono); letter-spacing: 2px; outline: none; }
+    #menu input:focus, #menu select:focus { border-color: var(--amber); }
+    #menu .chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--ink2); }
+    #menu .chk input { padding: 0; }
+    .progress { display: flex; gap: 4px; margin: 14px 0 4px; }
+    .progress i { flex: 1; height: 8px; background: #1a2027; clip-path: polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%); }
+    .progress i.on { background: linear-gradient(90deg, var(--amber2), var(--amber)); box-shadow: 0 0 10px rgba(255,176,32,.5); }
+    table.grid { width: 100%; border-collapse: collapse; margin-top: 12px; font: 13px var(--mono); }
+    table.grid th { text-align: left; color: var(--amber); background: #0a0d10; padding: 7px 9px; border: 1px solid var(--line); font-size: 10px; letter-spacing: 2px; }
+    table.grid td { padding: 7px 9px; border: 1px solid var(--line); color: var(--ink); }
+    table.grid tr:nth-child(even) td { background: rgba(255,255,255,.02); }
+    table.grid tr:hover td { background: rgba(255,176,32,.07); }
+    table.grid td:first-child { color: var(--ink3); width: 26px; text-align: right; }
+    table.grid td.dim { color: var(--ink3); text-align: center; }
+    #menu .note { font: 12px/1.6 var(--mil); color: var(--ink3); margin-top: 12px; border-left: 2px solid var(--line2); padding-left: 10px; }
+    #menu .err { min-height: 18px; color: var(--blood); margin-top: 10px; font: 600 14px var(--mil); }
+    .hints { grid-column: 1 / 3; display: flex; justify-content: space-between; align-items: center; padding: 0 6px; font: 11px var(--mono); color: var(--ink3); letter-spacing: 1px; }
+    #menuBtn { position: absolute; bottom: 8px; right: 10px; z-index: 8; }
+    /* Micro-animaciones: entrada escalonada de paneles, barrido del filo táctico, cambio de sección */
+    .stage:not(.hidden) .panel { animation: panelIn .45s cubic-bezier(.2,.8,.2,1) both; }
+    .stage .shell > :nth-child(2) { animation-delay: .06s; } .stage .shell > :nth-child(3) { animation-delay: .12s; }
+    @keyframes panelIn { from { opacity: 0; transform: translateY(14px) scale(.985); } }
+    .panel::before { background-size: 200% 100%; animation: edge 3.2s linear infinite; background-image: linear-gradient(90deg, var(--amber), transparent 35%, var(--amber) 50%, transparent 85%); }
+    @keyframes edge { to { background-position: -200% 0; } }
+    #menu section:not(.hidden) { animation: secIn .3s ease-out both; }
+    @keyframes secIn { from { opacity: 0; transform: translateX(10px); } }
+    /* Chat táctico */
+    #chat { position: absolute; left: 16px; bottom: 150px; z-index: 12; width: min(420px, 80vw); }
+    #chat input { width: 100%; box-sizing: border-box; padding: 9px 12px; background: rgba(6,8,10,.92); border: 1px solid var(--line2); border-left: 3px solid var(--amber); color: #fff; font: 600 15px var(--mil); outline: none; }
+    @media (max-width: 760px) {
+      #menu .shell { grid-template-columns: 1fr; height: auto; max-height: 96vh; overflow: auto; }
+      #menu .bar, .hints { grid-column: 1; }
+      #menu .nav { flex-direction: row; flex-wrap: wrap; padding: 8px; }
+      #menu .season { display: none; }
+      .title { font-size: 38px; letter-spacing: 8px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="game"></div>
+  <div id="login" class="stage">
+    <div class="brandmark">LEVIATHAN</div>
+    <form class="card panel" id="loginForm" autocomplete="on">
+      <div class="rows">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22</div>
+      <div class="cols"><span>A · CUENTA</span><span>B · SALA</span><span>C · MODO</span></div>
+      <div class="kicker">Refugio NOVA · Celda de despresurización</div>
+      <h1 class="title">LEVI<b>A</b>THAN</h1>
+      <p class="sub">MODO HISTORIA · COOPERATIVO HASTA 10 · ESCUADRONES HASTA 100</p>
+      <label for="callsign">// USUARIO</label>
+      <input id="callsign" maxlength="16" placeholder="Tu usuario" autocomplete="username" required>
+      <label for="password">// CONTRASEÑA</label>
+      <input id="password" type="password" maxlength="64" placeholder="Mínimo 4 caracteres" autocomplete="current-password">
+      <label class="chk"><input type="checkbox" id="remember" checked> Recordar sesión en este equipo</label>
+      <div class="row">
+        <button type="submit" id="joinBtn" class="j">INGRESAR</button>
+        <button type="button" id="regBtn" class="j alt">CREAR CUENTA</button>
+      </div>
+      <div class="err" id="loginErr"></div>
+      <div class="help">
+        <kbd>A</kbd><kbd>D</kbd> moverse · <kbd>ESPACIO</kbd> saltar (doble) · <kbd>SHIFT</kbd> dash · <kbd>S</kbd> cubrirse<br>
+        <kbd>CLIC</kbd> atacar · <kbd>Q</kbd> habilidad / apuntar · <kbd>G</kbd> granada (mantener = cocinar) · <kbd>T</kbd> tipo<br>
+        <kbd>R</kbd> recarga táctica (otra vez en la zona dorada = perfecta) · <kbd>V</kbd> cuerpo a cuerpo<br>
+        <kbd>F</kbd> racha · <kbd>C</kbd> dron de rescate · <kbd>X</kbd> (mantener) baliza · <kbd>CLIC CENTRAL</kbd> marcar · <kbd>E</kbd> interactuar · <kbd>TAB</kbd> hoja de operaciones · <kbd>P</kbd> calidad · <kbd>M</kbd> silencio
+      </div>
+    </form>
+  </div>
+
+  <div id="menu" class="stage hidden">
+    <div class="brandmark">LEVIATHAN</div>
+    <div class="shell">
+      <header class="bar panel">
+        <div><div class="kicker">Centro de mando · Refugio NOVA</div><h2 class="title">LEVI<b>A</b>THAN</h2></div>
+        <div class="who">
+          <div class="stat"><small>OPERADOR</small><b id="mUser">—</b></div>
+          <div class="stat cred"><small>BIOMASA</small><b>¢ <span id="mCred">0</span></b></div>
+          <div class="stat cyc"><small>BUCLE</small><b id="mCycle">0</b></div>
+          <button class="j small alt" id="mLogout">CERRAR SESIÓN</button>
+        </div>
+      </header>
+      <nav class="nav panel">
+        <div class="kicker">Seleccionar operación</div>
+        <button class="tab on" data-tab="story">Modo Historia<small>Campaña en solitario · 4 capas</small></button>
+        <button class="tab" data-tab="coop">Descenso cooperativo<small>Hasta 10 núcleos · campaña larga</small></button>
+        <button class="tab" data-tab="br">Batalla de escuadrones<small>Hasta 100 · equipos de 2, 5 o 10</small></button>
+        <div class="season" id="mSeason">
+          <div class="kicker">Temporada</div>
+          <h4 id="mSeasonName">—</h4>
+          <p id="mSeasonDesc"></p>
+          <div class="meter"><i id="mSeasonBar" style="width:0%"></i></div>
+          <small id="mSeasonPts"></small>
+        </div>
+      </nav>
+      <main class="content panel">
+        <section data-sec="story">
+          <div class="kicker">Operación 01</div>
+          <h3>Modo Historia</h3>
+          <p class="desc">Campaña individual de 4 capas hasta el Corazón del Leviathan. Cada final reinicia el mundo con el láser orbital y desentierra una verdad nueva, hasta el Final Verdadero.</p>
+          <div class="progress" id="mStoryBar"></div>
+          <p class="desc" id="mStory"></p>
+          <button class="j big" id="mStoryGo">▶ Desplegar</button>
+        </section>
+        <section data-sec="coop" class="hidden">
+          <div class="kicker">Operación 02</div>
+          <h3>Descenso cooperativo</h3>
+          <div class="row">
+            <button class="j" id="mCoopCreate">Crear sala</button>
+            <label class="chk"><input type="checkbox" id="mCoopPublic" checked> pública (aparece en el buscador)</label>
+          </div>
+          <div class="row">
+            <input id="mCode" maxlength="8" placeholder="CÓDIGO">
+            <button class="j alt" id="mCodeGo">Unirse por código</button>
+          </div>
+          <table class="grid"><thead><tr><th>#</th><th>A · SALA</th><th>B · ANFITRIÓN</th><th>C · NÚCLEOS</th><th>D · ESTADO</th><th>E · OBJETIVO</th><th></th></tr></thead><tbody id="mCoopList"></tbody></table>
+          <p class="note">Integridad: no se admiten núcleos nuevos durante un descenso en curso. Si pierdes la conexión, tu exotraje te espera 25 s (sin inmunidad). Las compuertas se adaptan a los operadores conectados.</p>
+        </section>
+        <section data-sec="br" class="hidden">
+          <div class="kicker">Operación 03</div>
+          <h3>Batalla de escuadrones</h3>
+          <div class="row">
+            <select id="mTeam"><option value="2">Dúos (2)</option><option value="5" selected>Escuadrones de 5</option><option value="10">10 vs 10</option></select>
+            <label class="chk"><input type="checkbox" id="mBrPublic" checked> pública</label>
+            <button class="j" id="mBrCreate">Crear lobby</button>
+          </div>
+          <table class="grid"><thead><tr><th>#</th><th>A · LOBBY</th><th>B · ANFITRIÓN</th><th>C · JUGADORES</th><th>D · EQUIPOS DE</th><th>E · ESTADO</th><th></th></tr></thead><tbody id="mBrList"></tbody></table>
+          <p class="note">Hasta 100 núcleos en 10 equipos. Las alcantarillas convergen en la Cámara Central y la inundación de Flujo baja desde arriba. Gana quien liquide al Corazón y a los rivales.</p>
+        </section>
+        <div class="err" id="mMsg"></div>
+      </main>
+      <footer class="hints"><span><kbd>CLIC</kbd> seleccionar · <kbd>E</kbd> interactuar en el refugio · <kbd>TAB</kbd> hoja de operaciones</span><span id="mVersion">LEVIATHAN v5</span></footer>
+    </div>
+  </div>
+  <div id="chat" class="hidden"><input id="chatIn" maxlength="120" placeholder="ENTER enviar · ESC cancelar" autocomplete="off"></div>
+  <button id="menuBtn" class="j small alt hidden" title="Volver al Centro de Mando">⏏ MENÚ</button>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/lib/phaser.min.js"></script>
+  <script src="/shared/constants.js"></script>
+  <script src="/shared/rng.js"></script>
+  <script src="/shared/physics.js"></script>
+  <script src="/shared/levelgen.js"></script>
+  <script src="/shared/brgen.js"></script>
+  <script src="/shared/hub.js"></script>
+  <script src="/shared/catalog.js"></script>
+  <script src="/shared/campaign.js"></script>
+  <script src="/js/net.js"></script>
+  <script src="/js/sfx.js"></script>
+  <script src="/js/weaponart.js"></script>
+  <script src="/js/textures.js"></script>
+  <script src="/js/gfx.js"></script>
+  <script src="/js/fx.js"></script>
+  <script src="/js/views.js"></script>
+  <script src="/js/world.js"></script>
+  <script src="/js/dialogue.js"></script>
+  <script src="/js/cinematics.js"></script>
+  <script src="/js/scenes/boot.js"></script>
+  <script src="/js/scenes/hub.js"></script>
+  <script src="/js/scenes/run.js"></script>
+  <script src="/js/scenes/ui.js"></script>
+  <script src="/js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "name": "leviathan",
+  "version": "1.0.0",
+  "description": "LEVIATHAN - Roguelite 2D cooperativo (hasta 10 jugadores). Servidor autoritativo Node.js + Socket.io, cliente Phaser 3.",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "phaser": "3.90.0",
+    "socket.io": "^4.8.1"
+  }
+}
