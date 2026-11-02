@@ -5,6 +5,9 @@
   if (typeof module === 'object' && module.exports) module.exports = m;
   else { root.LV = root.LV || {}; root.LV.Campaign = m; }
 })(typeof self !== 'undefined' ? self : this, function () {
+  // Zonas con mecánica y estética propias (ver LevelGen.applyZone)
+  const ZONES = { 'Turno de Noche': 'noche', 'Sala del Capataz': 'capataz', 'Pabellón de Cuarentena': 'cuarentena', 'Incubadoras Gemelas': 'gemelas',
+    'Cámara de la Quimera': 'quimera', 'Garganta Palpitante': 'garganta', 'Bosque de Venas': 'venas' };
   const layers = [
     { id: 1, name: 'La Fundición Ferrosa', biome: 'foundry', tint: 0x8fb3cc, tile: 0xffffff, back: 0x0a121b, accent: 0xffb020,
       desc: 'Sectores industriales oscuros donde aún patrullan los soldados de seguridad corporativa, ahora marionetas sin rostro del parásito.',
@@ -32,11 +35,14 @@
 
   const bosses = {
     foreman: { name: 'CAPATAZ FERROSO', tint: 0xffc060, hp: 3000, summon: 'soldier', material: 'placa_ferrosa',
-      attacks: { 1: ['volley', 'slam'], 2: ['volley', 'slam', 'charge', 'summon'], 3: ['volley', 'slam', 'charge', 'summon', 'volley'] } },
+      // Mecha industrial: prensas que barren el suelo, ondas sísmicas y metralla de remaches
+      attacks: { 1: ['prensa', 'onda', 'remaches'], 2: ['prensa', 'onda', 'remaches', 'charge', 'summon'], 3: ['martillo', 'prensa', 'onda', 'charge', 'remaches'] } },
     chimera: { name: 'QUIMERA PROTOTIPO X-9', tint: 0x60ffd8, hp: 3600, summon: 'drone', material: 'glandula_quimera',
-      attacks: { 1: ['volley', 'charge'], 2: ['volley', 'charge', 'summon', 'slam'], 3: ['charge', 'summon', 'laser', 'volley', 'laser'] } },
+      // Bestia de laboratorio: charcos de ácido, saltos depredadores y aliento de tres cabezas
+      attacks: { 1: ['acido', 'salto', 'cabezas'], 2: ['acido', 'salto', 'cabezas', 'charge', 'summon'], 3: ['salto', 'cabezas', 'acido', 'laser', 'summon'] } },
     matriarch: { name: 'MATRIARCA ALFA', tint: 0xff80e0, hp: 4300, summon: 'alpha', material: 'colmillo_matriarca',
-      attacks: { 1: ['slam', 'charge', 'volley'], 2: ['slam', 'charge', 'summon'], 3: ['slam', 'charge', 'summon', 'laser', 'laser'] } },
+      // Reina insectoide: lluvia de aguijones, excavación bajo tierra y nidos que eclosionan
+      attacks: { 1: ['aguijones', 'excavar', 'huevos'], 2: ['aguijones', 'excavar', 'huevos', 'charge'], 3: ['excavar', 'aguijones', 'huevos', 'laser', 'charge'] } },
     heart: { name: 'CORAZÓN DEL LEVIATHAN', tint: 0xff3b3b, hp: 8200, summon: 'drone', material: 'nucleo_flujo', final: true }
   };
 
@@ -61,7 +67,8 @@
             movers: [0.18, 0.3, 0.36, 0.45][L - 1],
             terrain: [0.4, 0.5, 0.95, 0.7][L - 1],
             vert: L >= 3 ? 3 : 2,
-            extract: !last
+            extract: !last,
+            zone: ZONES[name] || null
           }
         });
         idx++;
@@ -175,12 +182,16 @@
     return (cl(m[0] * r + m[1] * g + m[2] * b) << 16) | (cl(m[3] * r + m[4] * g + m[5] * b) << 8) | cl(m[6] * r + m[7] * g + m[8] * b);
   }
   // "S2026-11" → definición del acabado exclusivo de esa temporada
+  // Arsenal extendido para la 2ª pieza de temporada (sufijo "b"): rota mes a mes por las 30 armas nuevas
+  const EXT = ['ar_fenix', 'dc_rencor', 'mh_granespada', 'sn_vigia', 'dc_latigo', 'mh_glaive', 'smg_zorro', 'dc_mandoble', 'mh_pistolanza', 'rl_ariete', 'dc_hielo', 'mh_dobles'];
   function seasonCamo(id) {
-    const m = /^S(\d{4})-(\d{2})$/.exec(String(id || ''));
+    const m = /^S(\d{4})-(\d{2})(b?)$/.exec(String(id || ''));
     if (!m) return null;
     const year = +m[1], month = +m[2] - 1;
     if (month < 0 || month > 11) return null;
     const def = seasons[month], shift = ((year - 2026) * 47) % 360;
+    if (m[3]) return { id, arch: EXT[(month + year) % EXT.length], season: id.slice(0, 8), pattern: ['venas', 'cristal', 'grabado', 'acro'][month % 4], colors: def.camo.colors.map(c => hueShift(c, shift + 120)),
+      name: `${def.camo.name} Arsenal '${String(year).slice(2)}`, price: -1, exclusive: true, desc: `Exclusivo de la temporada ${def.name} ${year} para el arsenal extendido.` };
     return {
       id, arch: def.camo.arch, season: id, pattern: def.camo.pattern, colors: def.camo.colors.map(c => hueShift(c, shift)),
       name: `${def.camo.name} '${String(year).slice(2)}`, price: -1, exclusive: true,
@@ -191,7 +202,8 @@
   const SEASON_TIERS = [
     { pts: 4, reward: { credits: 250 }, label: '250 biomasa' },
     { pts: 10, reward: { credits: 200, chatarra: 4, tejido: 4 }, label: '200 biomasa + materiales' },
-    { pts: 18, reward: { camo: true }, label: 'Acabado EXCLUSIVO de temporada' }
+    { pts: 18, reward: { camo: true }, label: 'Acabado EXCLUSIVO de temporada' },
+    { pts: 28, reward: { camo2: true }, label: 'Acabado EXCLUSIVO del arsenal extendido' }
   ];
 
   // Bucles del Modo Historia: cada ciclo completado revela una capa de la verdad (Final Verdadero en el 4.º)

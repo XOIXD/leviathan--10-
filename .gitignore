@@ -1,3 +1,5 @@
 node_modules/
 /data/profiles.json
 /leviathan/
+/data/
+*.log

@@ -64,7 +64,8 @@ G.WorldScene = class extends Phaser.Scene {
 
   buildTilemap(level) {
     const map = this.make.tilemap({ tileWidth: 32, tileHeight: 32, width: level.tw, height: level.th });
-    const ts = map.addTilesetImage('tiles', 'tiles', 32, 32, 0, 0);
+    const tk = this.tileKey || 'tiles';
+    const ts = map.addTilesetImage(tk, tk, 32, 32, 0, 0);
     this.map = map;
     this.layer = map.createBlankLayer('main', ts, 0, 0).setDepth(10);
     for (let y = 0; y < level.th; y++) for (let x = 0; x < level.tw; x++) {
@@ -187,6 +188,7 @@ G.WorldScene = class extends Phaser.Scene {
     const ev = LV.Phys.stepPlayer(this.level, M.body, b, LV.C.DT);
     M.pending.push([seq, b, this.predT]);
     M.lastB = b;
+    this.tapLog = (this.tapLog || 0) | b;   // acumulado entre fotogramas de HUD (tutorial: ninguna pulsación se pierde)
     if (M.pending.length > 240) M.pending.shift();
     this.onLocalMove(ev);
     if (!(myFlags & 8)) this.localWeapon(b, M.aim, LV.C.DT);
@@ -223,7 +225,8 @@ G.WorldScene = class extends Phaser.Scene {
     while (M.acc >= LV.C.DT && steps < 15) { M.acc -= LV.C.DT; steps++; this.stepLocal(); }
     if (steps >= 15) M.acc = 0;
     M.sendT += dt;
-    if (M.sendT >= 1 / 30) { M.sendT = 0; G.Net.flushInputs(); }
+    // Entradas a 60 Hz: se envían en el mismo fotograma en que se simulan (antes cada 33 ms)
+    if (steps > 0) { M.sendT = 0; G.Net.flushInputs(); }
     const decay = Math.exp(-dt * 14);
     M.offX *= decay; M.offY *= decay;
 

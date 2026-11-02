@@ -55,8 +55,9 @@ Alternativa manual: `npm install` y luego `node server.js` (puerto configurable 
 
 ## Red y rendimiento
 
-- Simulación fija a 60 Hz con acumulador de alta resolución; snapshots por lotes a 20 Hz
-  (volátiles) + eventos fiables agrupados; filtrado por radio de interés por jugador.
+- Simulación fija a 60 Hz con acumulador de alta resolución; inputs por fotograma, snapshots por lotes a
+  30 Hz en historia/cooperativo y 20 Hz por defecto; eventos de combate inmediatos en salas pequeñas y
+  filtrado por radio de interés por jugador.
 - El cliente predice su propio movimiento con **la misma física compartida**
   (`shared/physics.js`) y reconcilia con el servidor, suavizando el error.
 - Los demás jugadores y enemigos se interpolan con 100 ms de retraso.
@@ -341,3 +342,81 @@ Con `LEVIATHAN_DEV=1` (nunca en producción) el servidor acepta comandos de depu
   - No aparece en las clasificaciones.
 - **Clasificaciones separadas:** B-0T muestra tres tablas independientes (bajas, K/D y biomasa), cada una con tu puesto.
 - **Toques de cierre:** destello dorado de partículas al completar una misión y medalla de oro 🏅 junto a tu nombre en el Centro de Mando cuando completas la campaña.
+
+## Versión 11 · Netcode competitivo, chat y voz
+**Retardos encontrados y eliminados:**
+
+| Fuente de retardo | Antes | Ahora |
+|---|---|---|
+| Envío de entradas del cliente | Cada 33 ms | Cada fotograma (60 Hz) |
+| Cola de entradas en el servidor | Hasta 6 fotogramas acumulados (≈100 ms fijos) | ≤2 fotogramas: el servidor recupera el atraso |
+| Envío de balas, impactos y bajas | Solo con el snapshot (cada 50 ms) | En el mismo tick (≤16 ms) en salas de hasta 10; el BR mantiene los lotes |
+| Tus propias balas | Aparecían cuando el servidor las devolvía | Trazador local en el mismo fotograma; el servidor sigue decidiendo el daño |
+| Snapshots | 20 Hz | 30 Hz en historia y cooperativo |
+| Búfer de interpolación mínimo | 70 ms | 45 ms |
+
+- **Compensación de latencia:** el cliente informa su RTT y la bala del jugador nace adelantada medio RTT (máximo 100 ms), con sub-pasos y colisiones.
+- **Espectador en cooperativo:** los caídos reciben todo el mapa, así que las cámaras de seguridad muestran enemigos en cualquier sala.
+- **Medición en local:** del disparo a la confirmación del servidor, mediana de 25 ms y p90 de 34 ms.
+- **Chat clásico:** registro en pantalla con las últimas 8 líneas, que se desvanecen a los 10 s y reaparecen al pulsar ENTER. El texto se inserta sin HTML.
+- **Voz (mantener B):**
+  - Audio μ-law a 8 kHz, unos 8 KB/s por hablante. El servidor solo reenvía los bytes: a toda la sala, o solo a tu equipo en BR. Limita el tamaño de cada paquete (1,5 KB) y la frecuencia (16 por segundo).
+  - Indicador 🔊 con quién está hablando.
+  - **Requisito del navegador:** el micrófono solo funciona en `http://localhost` o con HTTPS. En LAN por `http://192.168…` el navegador lo bloquea, aunque se sigue escuchando a los demás.
+
+## Versión 12 · 5 contra 5, zonas del Modo Historia y cinemáticas ilustradas
+- **5 contra 5** (pestaña nueva en el Centro de Mando):
+  - Equipos equilibrados automáticamente y reaparición a los 4 s con 1,5 s de protección.
+  - Gana el primer equipo en llegar a 30 bajas o el que más tenga al acabar los 6 minutos. Marcador en pantalla.
+- **15 mapas propios.** Cada uno combina arquitectura (pasarelas, contenedores, túneles, búnkeres, escalinatas, torres, pozo, puentes, desfiladero, plataformas móviles), material de tileset (hielo, acero, azulejo, hormigón, óxido, ladrillo, madera, biomasa, malla, roca) y paleta. Son simétricos en espejo para que ningún equipo tenga ventaja. El hash de los 15 diseños es distinto y los 15 tilesets se generan por separado.
+
+  Refinería Ártica · Puerto de Carga · Estación Fantasma · Búnker Omega · Desguace Ferroso · Ciudadela de Ceniza · Laboratorio Kronos · Muelle Seco · Granja de Biomasa · Torre de Comunicaciones · Fundición Roja · Cantera Vertical · Barrio Sumergido · Hangar Orbital · Santuario del Flujo
+- **Zonas del Modo Historia y del descenso cooperativo:**
+
+  | Zona | Qué cambia |
+  |---|---|
+  | Turno de Noche | Oscuridad total; solo ves lo que ilumina tu linterna |
+  | Andén del elevador | Estética clara: haces de luz cálida y polvo dorado |
+  | Sala del Capataz | Prensas hidráulicas animadas que aplastan |
+  | Pabellón de Cuarentena | Tanques de cultivo con especímenes y sirenas de contención |
+  | Incubadoras Gemelas | Dos cápsulas destructibles que generan crías hasta que las rompes |
+  | Cámara de la Quimera | Cubetas de ácido y tanques rotos |
+  | Garganta Palpitante | Tejido que late; cada 14 s un espasmo lanza al aire a quien esté en el suelo |
+  | Bosque de Venas | Venas colgantes que se balancean |
+- **Subdescenso secreto antes de cada jefe:** una sala oculta en una rama lateral con armería (vida completa, munición, 5 granadas, +1 estimulante) y un conducto que lleva a la antesala del jefe. Aparece en el 98% de los niveles con jefe.
+- **Cinemáticas ilustradas:** cada línea muestra una viñeta pintada a pantalla completa con paneo lento y subtítulos abajo. Hay 13 viñetas, y cada zona tiene su propia cinemática de entrada.
+
+## Versión 13 · Arsenal de 70 armas, jefes únicos, Corazón en 3 fases, tutorial y arte
+- **30 armas nuevas** (≈70 en total). Cada una tiene su silueta, su perfil de retroceso y peso, y sus mecánicas:
+
+  | Familia | Armas |
+  |---|---|
+  | Tácticas (estilo CoD Mobile) | Fusil AR Fénix · Carabina Tormenta-4 (ráfaga de 3) · Subfusil Zorro · Escopeta Trueno 15 · Francotirador Vigía Q33 · Rifle de cerrojo Kilo · Ametralladora Hades · Revólver J-358 · Lanzacohetes Ariete (explosivo) · Ballesta Silencio |
+  | Prisión (estilo Dead Cells) | Hoja Equilibrada · Espada del Rencor (remolino) · Mandoble (terremoto) · Daga del Asesino (embestida + lanzar) · Espada Frenética (combo de 5) · Martillo de Pedernal (aturde) · Látigo Eléctrico (alcance 120, aturde) · Arco de Hielo (congela) · Cuchillos Arrojadizos · Sandalias de Esparta (patada) |
+  | Cazador (estilo MHO) | Gran Espada · Espada Larga Espíritu · Hojas Dobles · Martillo del Cazador (aturde + golpe giratorio) · Lanza Bastión (mantén Q: escudo, −75% daño) · Pistolanza (proyectil explosivo) · Glaive Insecto (salto de bóveda) · Arco de Cazador · Ballesta Ligera · Ballesta Pesada (explosiva) |
+
+- **Camuflajes:** 2 exclusivos por arma nueva (60 en total), con patrón y paleta propios. El pase de temporada suma un 4.º nivel con 28 puntos: un camuflaje exclusivo del arsenal extendido que rota cada mes.
+- **Economía de contratos con Kai, por nivel del arma:** básica 150 · estándar 260 · avanzada 420 · pesada 650 · legendaria 950. El Hacha transformable queda como avanzada, 420. El menú agrupa los contratos en 4 familias.
+- **Jefes con modelo y mecánicas propios** (ya no es el mismo robot teñido):
+  - **Capataz Ferroso** (mecha industrial): prensas hidráulicas que avanzan hacia ti, ondas sísmicas, metralla de remaches y martillazo doble en la fase 3.
+  - **Quimera X-9** (cuadrúpedo de tres cabezas): charcos de ácido que duran 4,5 s, salto depredador que deja ácido al caer y aliento triple.
+  - **Matriarca Alfa** (reina insectoide): lluvia de aguijones desde el techo, se entierra (invulnerable) y emerge bajo ti, y pone nidos que eclosionan.
+- **El Corazón, en 3 fases:**
+  - **Fase 1 · Latido:** anillos lentos con un hueco giratorio (siempre hay salida) y golpes avisados.
+  - **Fase 2 · Bombeo arterial:** espiral doble continua, barridos de arteria y crías.
+  - **Fase 3 · Arritmia:** ciclos de ráfagas dirigidas, un tablero de impactos con carriles seguros y una espiral inversa con barrido. Al terminar cada ciclo queda **expuesto** 1,8 s, que es tu ventana para castigarlo.
+  - Cada cambio de fase trae 2 s de transición invulnerable. El daño por bala no sube: lo que crece es la complejidad.
+- **Tutorial interactivo** para cuentas nuevas, en 7 pasos que se completan haciendo la acción: moverse, saltar, dash, NOVA, Kai, hoja con TAB y LISTO con Vex. Tiene una flecha guía hacia cada NPC y se omite con F1.
+- **Ilustraciones de las cinemáticas rehechas:** capas con perspectiva atmosférica, rayos volumétricos, siluetas con luz de contorno, arquitectura con ventanas y tuberías, partículas, gradación de color, viñeteado y grano.
+
+## Versión final · Pulido y despliegue en Render
+- **Guardarropa de NOVA** agrupado por familias, como los contratos de Kai.
+- **Equilibrio de armas:** suben el rifle de cerrojo, el lanzacohetes, el fusil AR, el subfusil, la ballesta ligera y el arco de hielo; bajan la daga del asesino, la gran espada y el martillo de pedernal.
+- **5 contra 5:** el marcador aparece arriba a la derecha y el final distingue VICTORIA, DERROTA y EMPATE.
+- **Limpieza:** se eliminó código sin uso. La consola del navegador carga limpia, sin errores ni avisos, y no hay recursos rotos (verificado).
+- **Despliegue en Render:**
+  - `render.yaml` incluido: Blueprint con disco persistente en `/var/data` para que las cuentas no se pierdan entre despliegues.
+  - Configura `LEVIATHAN_ADMIN_PASS` en el panel de Render.
+  - El servidor usa el puerto `PORT` que asigna Render.
+  - `.gitignore` excluye `node_modules/` y `data/`.
+- **Requisito:** Node 18 o superior (`engines` en `package.json`).

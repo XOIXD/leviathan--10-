@@ -4,7 +4,10 @@
 G.Dialogue = (function () {
   const Cat = LV.Catalog, Cmp = LV.Campaign;
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-  const ALL_ARCH = ['pistol', 'rifle', 'katana', 'axe', 'smg', 'shotgun', 'sniper', 'lmg', 'dagas', 'cetro'];
+  const ALL_ARCH = Object.keys(Cat.archetypes).filter(k => k !== 'clavos');
+  const FAM = { base: 'Arsenal de la Flota', cod: 'Armas tácticas (estilo CoD)', dc: 'Armas de la Prisión (estilo Dead Cells)', mho: 'Armas de cazador (estilo MHO)' };
+  const famOf = (k) => (Cat.arms[k] && Cat.arms[k].fam) || 'base';
+  const TIERN = ['', 'BÁSICA', 'ESTÁNDAR', 'AVANZADA', 'PESADA', 'LEGENDARIA'];
   // Texto de pasivas de un exotraje
   const passText = (p) => !p ? 'Sin pasivas' : [p.hp && `${p.hp > 0 ? '+' : ''}${p.hp} vida`, p.armor && `-${Math.round(p.armor * 100)}% daño recibido`, p.speed && `${p.speed > 0 ? '+' : ''}${Math.round(p.speed * 100)}% velocidad`, p.dmg && `+${Math.round(p.dmg * 100)}% daño`, p.dash && `dash ${Math.round(p.dash * 100)}% más rápido`, p.gren && `+${p.gren} granadas`, p.stims && `+${p.stims} estimulante`, p.regen && 'regeneración'].filter(Boolean).join(' · ');
   const cr = (n) => `${n} ¢`;
@@ -91,26 +94,22 @@ G.Dialogue = (function () {
         line: `TEMPORADA: ${(se.name || '').toUpperCase()} · quedan ${days} día(s).\n${se.lore || ''}\nPuntos: ${sp.pts} (descenso +1 · victoria +2 · contrato +1). Lo que no reclames antes del cierre se pierde para siempre.`,
         options: Cmp.SEASON_TIERS.map((t, i) => {
           const got = sp.claimed.includes(i), can = sp.pts >= t.pts;
-          const label = t.reward.camo && camo ? `${camo.name} · camuflaje exclusivo de ${({ pistol: 'pistola', rifle: 'rifle', katana: 'katana', axe: 'hacha' })[camo.arch]}` : t.label;
+          const camo2 = t.reward.camo2 ? Cmp.seasonCamo((sp.id || se.id) + 'b') : null;
+          const label = camo2 ? `${camo2.name} · camuflaje exclusivo de ${Cat.archetypes[camo2.arch]}` : t.reward.camo && camo ? `${camo.name} · camuflaje exclusivo de ${({ pistol: 'pistola', rifle: 'rifle', katana: 'katana', axe: 'hacha' })[camo.arch]}` : t.label;
           return {
             label: `Nivel ${i + 1} · ${label}`, sub: `Requiere ${t.pts} puntos`,
             right: got ? '✓ OBTENIDO' : can ? 'RECLAMAR' : `${sp.pts}/${t.pts}`,
             rightColor: got ? '#5f8292' : can ? '#7dff4f' : '#ffd34a',
             disabled: got || !can, act: { type: 'seasonClaim', tier: i },
-            preview: t.reward.camo && camo ? { arch: camo.arch, wskin: camo.id } : undefined
+            preview: camo2 ? { arch: camo2.arch, wskin: camo2.id } : t.reward.camo && camo ? { arch: camo.arch, wskin: camo.id } : undefined
           };
         }).concat([{ label: 'Atrás', back: true }])
       };
     },
     tailor_warch(prof) {
-      const ARCH = {};
-      for (const k of ALL_ARCH) if (k !== 'cetro' || (prof.arms || []).includes('cetro')) ARCH[k] = Cat.archetypes[k];
       return {
-        line: 'Cada arma tiene su propio catálogo de camuflajes, pintados sobre su geometría. Las piezas de maestría sirven para todas.',
-        options: Object.entries(ARCH).map(([k, n]) => {
-          const cur = G.WeaponArt.find(prof.wskins[k] || 'estandar');
-          return { label: n, sub: `Acabado actual: ${cur ? cur.name : 'Estándar'}`, go: 'tailor_wskin_' + k, preview: { arch: k, wskin: prof.wskins[k] || 'estandar' } };
-        }).concat([{ label: 'Atrás', back: true }])
+        line: 'Cada arma tiene su propio catálogo de camuflajes, pintados sobre su geometría. Elige una familia.',
+        options: Object.keys(FAM).map(f => ({ label: FAM[f], sub: `${ALL_ARCH.filter(k => famOf(k) === f).length} armas`, go: 'tailor_wfam_' + f })).concat([{ label: 'Atrás', back: true }])
       };
     },
     tailor_fx(prof) {
@@ -227,10 +226,7 @@ G.Dialogue = (function () {
         line: pick(NPC.trafficker.greet) + `\nContrato: ${c} · Núcleo de rareza: ${prof.rarityBoost ? 'sí' : 'no'} · Estimulantes extra: ${prof.extraStims || 0}/2.`,
         options: [
           { label: 'Forja de armas', sub: 'Modificaciones permanentes con materiales', go: 'trafficker_forge' },
-          ...ALL_ARCH.filter(k => k !== 'cetro' || (prof.arms || []).includes('cetro')).map(k => ({
-            label: 'Contrato: ' + Cat.archetypes[k], sub: Cat.arms[k] ? `${Cat.arms[k].kind === 'gun' ? (Cat.arms[k].auto ? 'Automática' : 'Semiautomática') : 'Cuerpo a cuerpo'} · [Q] ${Cat.arms[k].alt}` : 'Arma clásica de la Flota',
-            right: prof.contract === k ? 'ACTIVO' : cr(Cat.arms[k] ? 600 : 300), disabled: prof.contract === k, act: { type: 'contract', id: k }
-          })),
+          ...Object.keys(FAM).map(f => ({ label: 'Contratos · ' + FAM[f], sub: `${ALL_ARCH.filter(k => famOf(k) === f).length} armas · precio según nivel`, go: 'trafficker_fam_' + f })),
           { label: 'Núcleo de rareza', sub: 'Mejora la rareza del arma del próximo descenso', right: prof.rarityBoost ? 'INSTALADO' : cr(250), disabled: prof.rarityBoost, act: { type: 'rarity' } },
           { label: 'Estimulante de reanimación', sub: 'Úsalo derribado manteniendo E', right: (prof.extraStims || 0) >= 2 ? 'MÁX' : cr(90), disabled: (prof.extraStims || 0) >= 2, act: { type: 'stim' } },
           { label: 'Largarse', close: true }
@@ -435,6 +431,23 @@ G.Dialogue = (function () {
       }).concat([{ label: 'Atrás', back: true }])
     });
   }
+  // Contratos por familia: precio coherente con el nivel del arma (Catalog.contractPrice)
+  for (const f of Object.keys(FAM)) nodes['trafficker_fam_' + f] = (prof) => ({
+    line: `${FAM[f]}. El contrato asegura esa arma en tu próximo descenso. Precio según nivel: básica 150 · estándar 260 · avanzada 420 · pesada 650 · legendaria 950.`,
+    options: ALL_ARCH.filter(k => famOf(k) === f && (k !== 'cetro' || (prof.arms || []).includes('cetro'))).map(k => {
+      const d = Cat.arms[k], price = Cat.contractPrice(k), tier = (d && d.tier) || { pistol: 1, katana: 2, rifle: 2, axe: 3, smg: 2, shotgun: 2, sniper: 4, lmg: 4, dagas: 2, cetro: 5 }[k] || 2;
+      return { label: Cat.archetypes[k], sub: `${TIERN[tier]} · ${d ? (d.kind === 'gun' ? (d.auto ? 'automática' : d.burst ? 'ráfaga' : 'semiautomática') : 'cuerpo a cuerpo') + ' · [Q] ' + d.alt : 'clásica'}`,
+        right: prof.contract === k ? 'ACTIVO' : cr(price), rightColor: prof.contract === k ? '#7dff4f' : prof.credits >= price ? '#ffd34a' : '#ff6b6b', disabled: prof.contract === k, act: { type: 'contract', id: k } };
+    }).concat([{ label: 'Atrás', back: true }])
+  });
+  // Guardarropa: armas de una familia (con el acabado actual de cada una)
+  for (const f of Object.keys(FAM)) nodes['tailor_wfam_' + f] = (prof) => ({
+    line: FAM[f] + '. Pasa el cursor para verla en el probador.',
+    options: ALL_ARCH.filter(k => famOf(k) === f && (k !== 'cetro' || (prof.arms || []).includes('cetro'))).map(k => {
+      const cur = G.WeaponArt.find(prof.wskins[k] || 'estandar');
+      return { label: Cat.archetypes[k], sub: `Acabado actual: ${cur ? cur.name : 'Estándar'}`, go: 'tailor_wskin_' + k, preview: { arch: k, wskin: prof.wskins[k] || 'estandar' } };
+    }).concat([{ label: 'Atrás', back: true }])
+  });
   nodes.ranker_refresh = (prof) => { G.rankAt = 0; return nodes.ranker_root(prof); };
   for (const c of ['k', 'kd', 'bio']) nodes['ranker_' + c] = (prof) => { G.rankCat = c; G.rankAt = 0; return nodes.ranker_root(prof); };
   Cmp.truths.forEach((t, i) => { nodes['truth_' + i] = () => ({ line: `${t.title.toUpperCase()}\n${t.text}`, options: [{ label: 'Volver', back: true }] }); });

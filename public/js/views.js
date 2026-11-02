@@ -4,6 +4,13 @@
 
 // Perfil físico de cada arma: rigidez/amortiguación del muelle de retroceso, cuánto retrocede,
 // cuánto sube la boca, inercia de apuntado y cuánto se inclina el cuerpo al disparar
+// Peso de las armas del catálogo extendido derivado de su forma y retroceso
+function weightOf(arch) {
+  const d = LV.Catalog.arms[arch] || {}, t = d.shape ? d.shape.t : 'rifle', k = d.kick || 0.5;
+  if (['sword', 'dagger', 'whip', 'boot'].includes(t)) return { kick: 3, k: 500, c: 26, back: 3, climb: 0.08, follow: t === 'dagger' ? 50 : 30, lean: 0.02 };
+  if (['hammer', 'lance', 'glaive'].includes(t)) return { kick: 6, k: 260, c: 18, back: 4, climb: 0.14, follow: 12, lean: 0.07 };
+  return { kick: 4 + k * 14, k: 520 - k * 320, c: 28 - k * 14, back: 3 + k * 7, climb: 0.15 + k * 0.4, follow: 34 - k * 24, lean: 0.02 + k * 0.1 };
+}
 const WEIGHT = {
   pistol: { kick: 9, k: 520, c: 26, back: 5, climb: 0.35, follow: 30, lean: 0.03 },
   rifle: { kick: 6, k: 380, c: 22, back: 6, climb: 0.22, follow: 22, lean: 0.05 },
@@ -118,7 +125,7 @@ G.PlayerView = class {
       }
       const hy = this.y - (crouch ? 16 : 24);
       const side = aimRight ? 1 : -1;
-      const W = WEIGHT[form] || WEIGHT.rifle;
+      const W = WEIGHT[form] || (WEIGHT[form] = weightOf(form));
       // --- Retroceso con muelle amortiguado: patada, sobre-oscilación y asentamiento (peso real)
       if (this.recoil > this.lastRecoil + 0.05) this.kv += (this.recoil - this.lastRecoil) * W.kick;   // impulso por disparo
       this.recoil = Math.max(0, this.recoil - dt * 9);
@@ -218,8 +225,9 @@ G.EnemyView = class {
     this.flashT = 0; this.t = Math.random() * 10; this.seenHp = 1000; this.hpShowT = 0; this.alive = true;
   }
   activate(id) { this.reset(); this.id = id; this.sprite.setVisible(true); }
-  release() { this.sprite.setVisible(false); this.glow.setVisible(false); this.tag.setVisible(false); if (this.gun) this.gun.setVisible(false); this.id = 0; this.baseTint = 0xffffff; }
-  setKind(tint) { this.baseTint = tint || 0xffffff; }
+  release() { this.sprite.setVisible(false); this.glow.setVisible(false); this.tag.setVisible(false); if (this.gun) this.gun.setVisible(false); this.id = 0; this.baseTint = 0xffffff; if (this.kind) { this.kind = null; this.sprite.setTexture(ENEMY_TEX[this.ti]); } }
+  // Cada jefe tiene su propio modelo (ya no es el mismo cuerpo teñido)
+  setKind(kind) { if (this.kind === kind) return; this.kind = kind; const k = 'e_boss_' + kind; if (this.s.textures.exists(k)) this.sprite.setTexture(k); this.baseTint = 0xffffff; }
   setState(x, y, hp, flags, aux, extra) {
     if (hp < this.hp) this.hpShowT = 2.5;
     this.x = x; this.y = y; this.hp = hp; this.flags = flags; this.aux = aux; this.extra = extra;
@@ -237,7 +245,7 @@ G.EnemyView = class {
     if (f & 4) { const p = Math.sin(this.t * 40) * 0.06; sx = 1 + p; sy = 1 - p; }
     if (f & 8) { sx = 1.15; sy = 0.92; rot = (f & 1) ? 0.12 : -0.12; }
     if (f & 16) rot = Math.sin(this.t * 20) * 0.08;
-    sp.setPosition(this.x, this.y + oy).setScale(sx, sy).setRotation(rot);
+    sp.setPosition(this.x, this.y + oy).setScale(sx, sy).setRotation(rot).setAlpha(f & 512 ? 0.15 : 1);   // 512 = bajo tierra
     if (this.gun) this.gun.setVisible(true).setPosition(this.x, this.y - 17).setRotation(this.aux / 100).setFlipY(Math.cos(this.aux / 100) < 0);
     const marked = (f & 256) !== 0;
     this.tag.setVisible(marked);
@@ -247,6 +255,10 @@ G.EnemyView = class {
     else if (f & 4) sp.setTint(Math.sin(this.t * 30) > 0 ? 0xff5050 : 0xffffff);
     else if (f & 16) sp.setTint(0x8888ff);
     else if (marked) sp.setTint(Math.sin(this.t * 6) > 0 ? 0xff9070 : 0xffffff);
+    else if (this.ti === 7) {           // Corazón: color y latido según la fase
+      const ph = (G.UI && G.UI.bossPhase) || 1;
+      sp.setTint(ph === 1 ? 0xffffff : ph === 2 ? (Math.sin(this.t * 6) > 0 ? 0xffb080 : 0xffffff) : (Math.sin(this.t * 14) > 0 ? 0xff5050 : 0xffd0d0));
+    }
     else if (this.baseTint !== 0xffffff) sp.setTint(this.baseTint);
     else sp.clearTint();
     const glowing = (f & 4) || (f & 8) || (f & 128) || this.ti === 1;

@@ -18,6 +18,7 @@ const C = require('./shared/constants');
 const Profiles = require('./server/profiles');
 const Room = require('./server/room');
 const BRRoom = require('./server/br');
+const TDMRoom = require('./server/tdm');
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 const app = express();
@@ -49,16 +50,17 @@ const MAX_ROOMS = +process.env.LEVIATHAN_MAX_ROOMS || 200;
 function createRoom(code, mode, opts) {
   if (rooms.size >= MAX_ROOMS) return null;   // tope de salas: un abuso no puede agotar CPU/RAM
   const onEmpty = (rr) => { rooms.delete(rr.code); console.log(`[sala] ${rr.code} cerrada (vacía)`); };
-  const r = mode === 'br' ? new BRRoom(code, io, onEmpty, opts) : new Room(code, io, onEmpty);
+  const r = mode === 'tdm' ? new TDMRoom(code, io, onEmpty, opts) : mode === 'br' ? new BRRoom(code, io, onEmpty, opts) : new Room(code, io, onEmpty);
   if (mode === 'solo') { r.mode = 'solo'; r.max = 1; r.isPublic = false; }
   else if (mode === 'coop') r.isPublic = !!opts.public;
+  if (mode !== 'br') r.snapEvery = 2;   // ≤10 jugadores: snapshots a 30 Hz (menos interpolación, más precisión)
   rooms.set(code, r);
   console.log(`[sala] ${code} creada (${mode}${r.isPublic ? ', pública' : ''})`);
   return r;
 }
 function roomList(mode) {
   const out = [];
-  for (const r of rooms.values()) if (r.isPublic && (!mode || r.mode === mode)) out.push(r.summary());
+  for (const r of rooms.values()) if (r.isPublic && (!mode || (r.tdm ? 'tdm' : r.mode) === mode)) out.push(r.summary());
   return out.sort((a, b) => b.players - a.players).slice(0, 60);
 }
 
@@ -121,12 +123,12 @@ io.on('connection', (socket) => {
       room = null;   // referencia huérfana (p.ej. tras un fallo al entrar): se libera
     }
     const d = data || {};
-    const mode = ['solo', 'coop', 'br'].includes(d.mode) ? d.mode : 'coop';
+    const mode = ['solo', 'coop', 'br', 'tdm'].includes(d.mode) ? d.mode : 'coop';
     let r = null;
     // Reconexión: si el jugador tiene una ranura reservada en alguna sala, vuelve a ella
     for (const rr of rooms.values()) if (rr.findGhost(profile.name)) { r = rr; break; }
     if (!r) {
-      if (d.create || mode === 'solo') r = createRoom(genCode(mode === 'solo' ? 'S' : mode === 'br' ? 'B' : 'C'), mode, { public: !!d.public, teamSize: d.teamSize | 0 });
+      if (d.create || mode === 'solo') r = createRoom(genCode(mode === 'solo' ? 'S' : mode === 'br' ? 'B' : mode === 'tdm' ? 'T' : 'C'), mode, { public: !!d.public, teamSize: d.teamSize | 0, map: Number.isInteger(d.map) ? d.map : -1 });
       else {
         const code = cleanRoom(d.room);
         if (!code) return reply({ ok: false, msg: 'Código de sala inválido.' });
@@ -151,7 +153,8 @@ io.on('connection', (socket) => {
     try { if (liveRoom()) room.removePlayer(socket, true); }
     finally { room = null; if (typeof cb === 'function') cb({ ok: true }); }
   }));
-  socket.on('i', guard('input', (frames, ack) => { if (liveRoom()) room.onInput(socket, frames, ack); }));
+  socket.on('i', guard('input', (frames, ack, rtt) => { if (liveRoom()) room.onInput(socket, frames, ack, rtt); }));
+  socket.on('vc', guard('voice', (buf) => { if (liveRoom()) room.onVoice(socket, buf); }));
   socket.on('full', guard('full', () => { if (liveRoom()) room.requestFull(socket); }));
   socket.on('a', guard('action', (a, cb) => {
     const now = Date.now();

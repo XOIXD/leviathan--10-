@@ -128,6 +128,47 @@ G.Tex = (function () {
     ctx.fillStyle = '#4a3a80'; ctx.fillRect(0, h - 42, 7, 12); ctx.fillRect(33, h - 42, 7, 12);
   }
 
+  // ---- Modelos únicos de jefe (mismo marco 136x116 que la base para conservar colisión y anclaje)
+  function drawForeman(c, w, h) {        // CAPATAZ FERROSO: mecha de fundición con prensas hidráulicas
+    c.fillStyle = '#1a1d22'; c.fillRect(30, h - 30, 24, 30); c.fillRect(w - 54, h - 30, 24, 30);
+    c.fillStyle = '#c99a10'; for (let i = 0; i < 4; i++) { c.fillRect(30, h - 30 + i * 8, 24, 3); c.fillRect(w - 54, h - 30 + i * 8, 24, 3); }
+    const g = c.createLinearGradient(0, 22, 0, h - 28); g.addColorStop(0, '#5a5f66'); g.addColorStop(1, '#262a30');
+    c.fillStyle = g; rrect(c, 24, 22, w - 48, h - 52, 8); c.fill();
+    c.save(); c.beginPath(); c.rect(24, h - 46, w - 48, 14); c.clip(); for (let i = -4; i < 20; i++) { c.fillStyle = i % 2 ? '#111' : '#ffb020'; c.beginPath(); c.moveTo(24 + i * 10, h - 32); c.lineTo(34 + i * 10, h - 32); c.lineTo(44 + i * 10, h - 46); c.lineTo(34 + i * 10, h - 46); c.fill(); } c.restore();
+    c.fillStyle = '#0c0e10'; rrect(c, w / 2 - 22, 34, 44, 20, 4); c.fill();
+    c.fillStyle = '#ff7a00'; c.fillRect(w / 2 - 18, 40, 36, 6); c.fillStyle = 'rgba(255,200,120,.8)'; c.fillRect(w / 2 - 18, 40, 36, 2);
+    for (const sx of [0, 1]) {
+      const x = sx ? w - 20 : 4;
+      c.fillStyle = '#3a3f46'; c.fillRect(x + 2, 26, 14, 50); c.fillStyle = '#9aa4b0'; c.fillRect(x + 6, 30, 6, 40);
+      c.fillStyle = '#20242a'; rrect(c, x - 4, 74, 26, 22, 3); c.fill(); c.fillStyle = '#ff3b3b'; c.fillRect(x - 2, 90, 22, 3);
+    }
+    c.fillStyle = '#2a2f36'; c.fillRect(w / 2 + 16, 4, 12, 20); c.fillStyle = 'rgba(255,140,40,.7)'; c.fillRect(w / 2 + 18, 2, 8, 4);
+    for (const [x, y] of [[32, 28], [w - 36, 28], [32, h - 54], [w - 36, h - 54]]) { c.fillStyle = '#9aa4b0'; c.beginPath(); c.arc(x, y, 3, 0, 6.3); c.fill(); }
+  }
+  function drawChimera(c, w, h) {        // QUIMERA X-9: cuadrúpedo de laboratorio con tres cabezas y tanques en el lomo
+    c.fillStyle = '#1a2a26'; for (const x of [18, 40, w - 52, w - 30]) c.fillRect(x, h - 34, 12, 34);
+    const g = c.createLinearGradient(0, 40, 0, h - 30); g.addColorStop(0, '#3a6a5a'); g.addColorStop(1, '#14261f');
+    c.fillStyle = g; c.beginPath(); c.ellipse(w / 2 + 6, h - 50, 52, 30, 0, 0, 6.3); c.fill();
+    for (const [x, cl] of [[w / 2 - 6, '#60ffd8'], [w / 2 + 20, '#a0ff60']]) { c.fillStyle = 'rgba(30,50,46,.95)'; c.fillRect(x - 8, 22, 16, 30); const tg = c.createLinearGradient(x - 6, 0, x + 6, 0); tg.addColorStop(0, cl); tg.addColorStop(1, 'rgba(255,255,255,.4)'); c.fillStyle = tg; c.fillRect(x - 6, 26, 12, 22); }
+    c.strokeStyle = '#2a4a40'; c.lineWidth = 7;
+    for (const [ex, ey] of [[14, 34], [6, 58], [20, 80]]) { c.beginPath(); c.moveTo(w / 2 - 30, h - 56); c.quadraticCurveTo(ex + 20, ey + 10, ex + 10, ey); c.stroke(); c.fillStyle = '#3a6a5a'; c.beginPath(); c.ellipse(ex + 4, ey, 14, 9, -0.3, 0, 6.3); c.fill(); c.fillStyle = '#ffe94a'; c.fillRect(ex - 4, ey - 3, 4, 3); c.fillStyle = '#e8f8f0'; c.fillRect(ex - 10, ey + 3, 10, 2); }
+    c.strokeStyle = 'rgba(96,255,216,.6)'; c.lineWidth = 2; for (let i = 0; i < 4; i++) { c.beginPath(); c.moveTo(w / 2 - 20 + i * 14, h - 74); c.lineTo(w / 2 - 14 + i * 16, h - 36); c.stroke(); }
+    c.fillStyle = '#20302c'; c.beginPath(); c.moveTo(w - 30, h - 54); c.quadraticCurveTo(w + 4, h - 90, w - 6, h - 100); c.lineTo(w - 12, h - 96); c.quadraticCurveTo(w - 8, h - 80, w - 36, h - 48); c.fill();
+  }
+  function drawMatriarch(c, w, h) {      // MATRIARCA ALFA: reina insectoide con abdomen, mandíbulas y corona de púas
+    c.strokeStyle = '#2a0a22'; c.lineWidth = 5;
+    for (let i = 0; i < 3; i++) for (const d of [-1, 1]) { c.beginPath(); c.moveTo(w / 2 + d * 10, h - 44 + i * 6); c.lineTo(w / 2 + d * (34 + i * 14), h - 30 - i * 8); c.lineTo(w / 2 + d * (40 + i * 16), h); c.stroke(); }
+    const ab = c.createRadialGradient(w - 40, h - 46, 6, w - 40, h - 46, 40); ab.addColorStop(0, '#ff80e0'); ab.addColorStop(0.5, '#7a1a5a'); ab.addColorStop(1, '#2a0820');
+    c.fillStyle = ab; c.beginPath(); c.ellipse(w - 42, h - 46, 36, 26, 0.2, 0, 6.3); c.fill();
+    c.strokeStyle = 'rgba(255,200,240,.5)'; c.lineWidth = 2; for (let i = 0; i < 4; i++) { c.beginPath(); c.ellipse(w - 42, h - 46, 30 - i * 2, 20, 0.2, -1 + i * 0.4, -0.6 + i * 0.4); c.stroke(); }
+    c.fillStyle = '#3a0a2e'; c.beginPath(); c.ellipse(w / 2 - 2, h - 56, 26, 22, 0, 0, 6.3); c.fill();
+    c.fillStyle = '#4a1240'; c.beginPath(); c.ellipse(38, h - 74, 22, 18, -0.2, 0, 6.3); c.fill();
+    c.fillStyle = '#ff80e0'; for (let i = 0; i < 5; i++) { c.beginPath(); c.moveTo(22 + i * 8, h - 88); c.lineTo(26 + i * 8, h - 108 + (i % 2) * 6); c.lineTo(30 + i * 8, h - 88); c.fill(); }
+    c.fillStyle = '#ffffff'; c.fillRect(22, h - 78, 6, 3); c.fillRect(34, h - 80, 6, 3);
+    c.fillStyle = '#e8d0e0'; c.beginPath(); c.moveTo(20, h - 66); c.lineTo(4, h - 54); c.lineTo(18, h - 60); c.fill(); c.beginPath(); c.moveTo(26, h - 62); c.lineTo(12, h - 46); c.lineTo(26, h - 56); c.fill();
+    const gw = c.createRadialGradient(w / 2, h - 60, 2, w / 2, h - 60, 14); gw.addColorStop(0, 'rgba(255,128,224,.9)'); gw.addColorStop(1, 'rgba(255,128,224,0)'); c.fillStyle = gw; c.fillRect(w / 2 - 14, h - 74, 28, 28);
+  }
+
   function drawWarden(ctx, w, h) {
     // piernas
     ctx.fillStyle = '#1a1f27';
@@ -408,6 +449,9 @@ G.Tex = (function () {
     make(scene, 'e_drone', 30, 20, drawDrone);
     make(scene, 'e_elite', 40, 56, drawElite);
     make(scene, 'e_warden', 136, 116, drawWarden);
+    make(scene, 'e_boss_foreman', 136, 116, drawForeman);
+    make(scene, 'e_boss_chimera', 136, 116, drawChimera);
+    make(scene, 'e_boss_matriarch', 136, 116, drawMatriarch);
     // NPCs y retratos
     for (const n of LV.Hub.build().npcs) {
       make(scene, 'npc_' + n.key, 32, 54, (c, w, h) => drawNpc(c, w, h, n.key, n.color));

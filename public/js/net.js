@@ -3,7 +3,7 @@
    - Reconexión automática: re-autentica con el token de sesión y recupera su ranura en la sala.
    - Snapshots delta: reconstruye el estado completo a partir de la base confirmada (ack) y la confirma.
    - Búfer de fluctuación adaptativo: el retardo de interpolación se ajusta a la red real (sin tirones).
-   - Envío de inputs por lotes a 30 Hz con la confirmación de la última instantánea recibida. */
+   - Envío de inputs por fotograma simulado (60 Hz) con la confirmación de la última instantánea recibida. */
 window.G = window.G || {};
 
 G.Net = {
@@ -43,7 +43,7 @@ G.Net = {
   connect(auth, cb) {
     if (this.socket) { this.socket.removeAllListeners(); this.socket.disconnect(); }
     // WebSocket primero; si un proxy/antivirus/firewall lo bloquea, cae a long-polling en vez de no conectar nunca
-   const s = io("https://leviathan-online-free.onrender.com", { transports: ['websocket', 'polling'], tryAllTransports: true, reconnection: true, reconnectionDelay: 400, reconnectionDelayMax: 3000, reconnectionAttempts: 40, timeout: 8000 });
+    const s = io({ transports: ['websocket', 'polling'], tryAllTransports: true, reconnection: true, reconnectionDelay: 400, reconnectionDelayMax: 3000, reconnectionAttempts: 40, timeout: 8000 });
     this.socket = s;
     let first = true;
     s.on('connect', () => {
@@ -93,6 +93,7 @@ G.Net = {
     s.on('hub', (info) => { this.phase = 'hub'; this.sel = info.sel || this.sel; this.runInfo = null; this.resetState(); this.fire('hub', info); });
     s.on('notify', (n) => this.fire('notify', n));
     s.on('chat', (c) => this.fire('chat', c));
+    s.on('vc', (id, buf) => { if (G.Voice) G.Voice.play(id, buf); });
     // La sala se cerró (error interno o fallo al entrar): volver al menú sin perder la sesión
     s.on('roomclosed', (k) => { if (this.session) this.session.room = null; this.roster.clear(); this.resetState(); this.fire('leftroom', (k && k.msg) || 'La sala se cerró.'); });
     s.on('kicked', (k) => { this.session = null; this.fire('fatal', (k && k.msg) || 'Desconectado.'); });
@@ -163,7 +164,7 @@ G.Net = {
       const d = now - this.lastArr;
       this.arrMean += (d - this.arrMean) * 0.05;
       this.arrJit += (Math.abs(d - this.arrMean) - this.arrJit) * 0.05;
-      const target = Math.max(70, Math.min(240, this.arrMean * 1.6 + this.arrJit * 3));
+      const target = Math.max(45, Math.min(240, this.arrMean * 1.6 + this.arrJit * 3));
       this.INTERP_DELAY += (target - this.INTERP_DELAY) * 0.02;
     }
     this.lastArr = now;
@@ -204,7 +205,7 @@ G.Net = {
 
   flushInputs() {
     if (this.outbox.length && this.socket && this.socket.connected && this.session && this.session.room) {
-      this.socket.emit('i', this.outbox, this.ack);
+      this.socket.emit('i', this.outbox, this.ack, Math.round(this.rtt || 0));
       this.outbox = [];
     }
   },

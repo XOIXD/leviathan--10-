@@ -91,6 +91,7 @@
   function stopGame() {
     const sm = G.game.scene;
     sm.stop('Hub'); sm.stop('Run');
+    const cl = $('chatLog'); if (cl) cl.textContent = '';
     if (G.UI) G.UI.setMode('none');
   }
   function fillMenu() {
@@ -128,17 +129,28 @@
   document.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('.j, .tab')) G.Sfx.play('ui_ok'); });
   // --- Chat táctico (ENTER abre; el teclado del juego se suspende mientras escribes)
   const chat = $('chat'), chatIn = $('chatIn');
-  const closeChat = () => { chat.classList.add('hidden'); chatIn.value = ''; chatIn.blur(); G.game.input.keyboard.enabled = true; G.game.canvas.focus(); };
+  const chatLog = $('chatLog');
+  G.Voice.bind();
+  const closeChat = () => { chatLog.classList.remove('open'); chat.classList.add('hidden'); chatIn.value = ''; chatIn.blur(); G.game.input.keyboard.enabled = true; G.game.canvas.focus(); };
   window.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' || !inGame || !chat.classList.contains('hidden') || (G.UI && (G.UI.dlg || G.UI.cine))) return;
-    e.preventDefault(); chat.classList.remove('hidden'); G.game.input.keyboard.enabled = false; chatIn.focus();
+    e.preventDefault(); chatLog.classList.add('open'); chat.classList.remove('hidden'); G.game.input.keyboard.enabled = false; chatIn.focus();
   });
   chatIn.addEventListener('keydown', (e) => {
     e.stopPropagation();
     if (e.key === 'Escape') closeChat();
     else if (e.key === 'Enter') { const t = chatIn.value.trim(); if (t) G.Net.act({ type: 'chat', text: t }); closeChat(); }
   });
-  G.Net.on('chat', (c) => { if (G.UI && Array.isArray(c)) { G.UI.addFeed(`${c[1]}: ${c[2]}`, c[0] === G.Net.id ? 0xffd34a : 0xe9eef2); G.Sfx.play('chat'); } });
+  G.Net.on('chat', (c) => {
+    if (!Array.isArray(c)) return;
+    const line = document.createElement('div');
+    const b = document.createElement('b'); b.textContent = c[1] + ': ';
+    line.appendChild(b); line.appendChild(document.createTextNode(c[2]));   // textContent: sin inyección de HTML
+    chatLog.appendChild(line);
+    while (chatLog.children.length > 8) chatLog.removeChild(chatLog.firstChild);
+    setTimeout(() => line.classList.add('old'), 10000);
+    G.Sfx.play('chat');
+  });
   function showMenu(msg) {
     inGame = false;
     $('login').style.display = 'none';
@@ -150,9 +162,11 @@
   async function refreshLists() {
     if (menu.classList.contains('hidden') || tab === 'story') return;
     const list = await G.Net.listRooms(tab);
-    const body = $(tab === 'coop' ? 'mCoopList' : 'mBrList');
+    const body = $(tab === 'coop' ? 'mCoopList' : tab === 'tdm' ? 'mTdmList' : 'mBrList');
     if (!list.length) { body.innerHTML = `<tr><td colspan="7" class="dim">No hay salas públicas · crea una</td></tr>`; return; }
-    body.innerHTML = list.map((r, i) => tab === 'coop'
+    body.innerHTML = list.map((r, i) => tab === 'tdm'
+      ? `<tr><td>${i + 1}</td><td>${esc(r.code)}</td><td>${esc(r.host)}</td><td>${r.players}/${r.max}</td><td>${esc(r.label)}</td><td>${r.phase === 'hub' ? 'LOBBY' : 'EN COMBATE'}</td><td><button class="j small" data-join="${esc(r.code)}" ${r.joinable ? '' : 'disabled'}>UNIRSE</button></td></tr>`
+      : tab === 'coop'
       ? `<tr><td>${i + 1}</td><td>${esc(r.code)}</td><td>${esc(r.host)}</td><td>${r.players}/${r.max}</td><td>${r.phase === 'hub' ? 'EN LA CELDA' : 'EN DESCENSO'}</td><td>${esc(r.label)}</td><td><button class="j small" data-join="${esc(r.code)}" ${r.joinable ? '' : 'disabled'}>UNIRSE</button></td></tr>`
       : `<tr><td>${i + 1}</td><td>${esc(r.code)}</td><td>${esc(r.host)}</td><td>${r.players}/${r.max}</td><td>${r.teamSize}</td><td>${r.phase === 'hub' ? 'LOBBY' : 'EN BATALLA'}</td><td><button class="j small" data-join="${esc(r.code)}" ${r.joinable ? '' : 'disabled'}>UNIRSE</button></td></tr>`).join('');
   }
@@ -173,6 +187,12 @@
   $('mStoryGo').addEventListener('click', () => joinRoom({ mode: 'solo', create: true }));
   $('mCoopCreate').addEventListener('click', () => joinRoom({ mode: 'coop', create: true, public: $('mCoopPublic').checked }));
   $('mCodeGo').addEventListener('click', () => { const c = $('mCode').value.trim(); if (c) joinRoom({ mode: 'coop', room: c }); });
+  // 5 contra 5: selector de los 15 mapas
+  const mapSel = $('mMap');
+  mapSel.innerHTML = '<option value="-1">Mapa aleatorio</option>' + LV.TDMGen.MAPS.map((m, i) => `<option value="${i}">${i + 1}. ${esc(m.name)}</option>`).join('');
+  const mapDesc = () => { const m = LV.TDMGen.MAPS[+mapSel.value]; $('mMapDesc').textContent = m ? `${m.desc}.` : 'Se elige uno de los 15 mapas al azar.'; };
+  mapSel.addEventListener('change', mapDesc); mapDesc();
+  $('mTdmCreate').addEventListener('click', () => joinRoom({ mode: 'tdm', create: true, public: $('mTdmPublic').checked, map: +mapSel.value }));
   $('mBrCreate').addEventListener('click', () => joinRoom({ mode: 'br', create: true, public: $('mBrPublic').checked, teamSize: +$('mTeam').value }));
   menu.addEventListener('click', (e) => { const t = e.target.closest('[data-join]'); if (t && !t.disabled) joinRoom({ mode: tab, room: t.dataset.join }); });
   $('mLogout').addEventListener('click', () => { store.set('lv_token', null); if (G.Net.socket) G.Net.socket.disconnect(); G.Net.session = null; showLogin(''); });

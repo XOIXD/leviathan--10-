@@ -163,6 +163,13 @@
     @keyframes secIn { from { opacity: 0; transform: translateX(10px); } }
     /* Chat táctico */
     #chat { position: absolute; left: 16px; bottom: 150px; z-index: 12; width: min(420px, 80vw); }
+    /* Registro de chat clásico: últimas 8 líneas; se desvanecen a los 10 s y reaparecen al abrir el chat */
+    #chatLog { position: absolute; left: 16px; bottom: 192px; z-index: 11; width: min(440px, 80vw); pointer-events: none; font: 600 14px var(--mil); text-shadow: 0 1px 2px #000, 0 0 4px #000; }
+    #chatLog div { padding: 2px 8px; margin-top: 2px; background: rgba(4,6,8,.55); border-left: 2px solid var(--line2); transition: opacity 1s; color: #e9eef2; }
+    #chatLog div b { color: var(--amber); }
+    #chatLog div.old { opacity: 0; }
+    #chatLog.open div { opacity: 1; }
+    #voiceInd { position: absolute; right: 16px; top: 74px; z-index: 11; font: 700 13px var(--mil); color: var(--bio); background: rgba(4,6,8,.7); padding: 4px 10px; border-left: 2px solid var(--bio); }
     #chat input { width: 100%; box-sizing: border-box; padding: 9px 12px; background: rgba(6,8,10,.92); border: 1px solid var(--line2); border-left: 3px solid var(--amber); color: #fff; font: 600 15px var(--mil); outline: none; }
     @media (max-width: 760px) {
       #menu .shell { grid-template-columns: 1fr; height: auto; max-height: 96vh; overflow: auto; }
@@ -218,7 +225,7 @@
         <kbd>A</kbd><kbd>D</kbd> moverse · <kbd>ESPACIO</kbd> saltar (doble) · <kbd>SHIFT</kbd> dash · <kbd>S</kbd> cubrirse<br>
         <kbd>CLIC</kbd> atacar · <kbd>Q</kbd> habilidad / apuntar · <kbd>G</kbd> granada (mantener = cocinar) · <kbd>T</kbd> tipo<br>
         <kbd>R</kbd> recarga táctica (otra vez en la zona dorada = perfecta) · <kbd>V</kbd> cuerpo a cuerpo<br>
-        <kbd>F</kbd> racha · <kbd>C</kbd> dron de rescate · <kbd>X</kbd> (mantener) baliza · <kbd>CLIC CENTRAL</kbd> marcar · <kbd>E</kbd> interactuar · <kbd>TAB</kbd> hoja de operaciones · <kbd>P</kbd> calidad · <kbd>M</kbd> silencio
+        <kbd>F</kbd> racha · <kbd>ENTER</kbd> chat · <kbd>B</kbd> (mantener) voz · <kbd>C</kbd> dron de rescate · <kbd>X</kbd> (mantener) baliza · <kbd>CLIC CENTRAL</kbd> marcar · <kbd>E</kbd> interactuar · <kbd>TAB</kbd> hoja de operaciones · <kbd>P</kbd> calidad · <kbd>M</kbd> silencio
       </div>
     </form>
   </div>
@@ -240,6 +247,7 @@
         <button class="tab on" data-tab="story">Modo Historia<small>Campaña en solitario · 4 capas</small></button>
         <button class="tab" data-tab="coop">Descenso cooperativo<small>Hasta 10 núcleos · campaña larga</small></button>
         <button class="tab" data-tab="br">Batalla de escuadrones<small>Hasta 100 · equipos de 2, 5 o 10</small></button>
+        <button class="tab" data-tab="tdm">5 contra 5<small>Duelo por equipos · 15 mapas</small></button>
         <div class="season" id="mSeason">
           <div class="kicker">Temporada</div>
           <h4 id="mSeasonName">—</h4>
@@ -282,11 +290,25 @@
           <table class="grid"><thead><tr><th>#</th><th>A · LOBBY</th><th>B · ANFITRIÓN</th><th>C · JUGADORES</th><th>D · EQUIPOS DE</th><th>E · ESTADO</th><th></th></tr></thead><tbody id="mBrList"></tbody></table>
           <p class="note">Hasta 100 núcleos en 10 equipos. Las alcantarillas convergen en la Cámara Central y la inundación de Flujo baja desde arriba. Gana quien liquide al Corazón y a los rivales.</p>
         </section>
+        <section data-sec="tdm" class="hidden">
+          <div class="kicker">Operación 04</div>
+          <h3>5 contra 5</h3>
+          <div class="row">
+            <select id="mMap"></select>
+            <label class="chk"><input type="checkbox" id="mTdmPublic" checked> pública</label>
+            <button class="j" id="mTdmCreate">Crear partida</button>
+          </div>
+          <p class="desc" id="mMapDesc"></p>
+          <table class="grid"><thead><tr><th>#</th><th>A · SALA</th><th>B · ANFITRIÓN</th><th>C · JUGADORES</th><th>D · MAPA</th><th>E · ESTADO</th><th></th></tr></thead><tbody id="mTdmList"></tbody></table>
+          <p class="note">Equipos equilibrados automáticamente. Reaparición a los 4 s. Gana el primer equipo en llegar a 30 bajas o el que más tenga al acabar los 6 minutos.</p>
+        </section>
         <div class="err" id="mMsg"></div>
       </main>
       <footer class="hints"><span><kbd>CLIC</kbd> seleccionar · <kbd>E</kbd> interactuar en el refugio · <kbd>TAB</kbd> hoja de operaciones</span><span id="mVersion">LEVIATHAN v5</span></footer>
     </div>
   </div>
+  <div id="chatLog"></div>
+  <div id="voiceInd" class="hidden"></div>
   <div id="chat" class="hidden"><input id="chatIn" maxlength="120" placeholder="ENTER enviar · ESC cancelar" autocomplete="off"></div>
   <button id="menuBtn" class="j small alt hidden" title="Volver al Centro de Mando">⏏ MENÚ</button>
 
@@ -297,13 +319,19 @@
   <script src="/shared/physics.js"></script>
   <script src="/shared/levelgen.js"></script>
   <script src="/shared/brgen.js"></script>
+  <script src="/shared/tdmgen.js"></script>
   <script src="/shared/hub.js"></script>
   <script src="/shared/catalog.js"></script>
   <script src="/shared/campaign.js"></script>
   <script src="/js/net.js"></script>
   <script src="/js/sfx.js"></script>
+  <script src="/js/voice.js"></script>
+  <script src="/js/weaponshapes.js"></script>
   <script src="/js/weaponart.js"></script>
   <script src="/js/textures.js"></script>
+  <script src="/js/tdmart.js"></script>
+  <script src="/js/zoneart.js"></script>
+  <script src="/js/cineart.js"></script>
   <script src="/js/gfx.js"></script>
   <script src="/js/fx.js"></script>
   <script src="/js/views.js"></script>

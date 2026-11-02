@@ -125,6 +125,49 @@
     clavos: { name: 'Pistola de clavos', kind: 'gun', auto: 0, dmg: [12, 15], rate: 0.3, mag: [8, 8], reload: [1.7, 1.9], spread: [0.05, 0.06], speed: 1300, life: 0.6, bloomAdd: 0.01, bloomMax: 0.05, kick: 0.3, alt: '—' },
     cetro: { name: 'Cetro del Rey', kind: 'blade', secret: 1, combo: 3, dmg: [40, 52], rate: 0.42, range: 88, height: 72, knock: 300, finMul: 1.8, altCd: 4, altShots: 5, altDmg: [45, 60], coverMul: 2, alt: 'DECRETO REAL' }
   };
+  // ---- Arsenal extendido: 30 armas. fam: cod (tácticas), dc (Prisión de Dead Cells), mho (cazador de MHO)
+  // tier 1-5 = precio de contrato coherente con su poder. shape = silueta para el arte por geometría.
+  // Mecánicas: burst (ráfaga), rocket (radio de explosión), stun (aturdir s), altKind (wave|launch|guard|shell|kick|throw|spin), lunge.
+  const ARMS2 = {
+    // COD Mobile
+    ar_fenix: { name: 'Fusil AR Fénix', fam: 'cod', tier: 2, kind: 'gun', auto: 1, dmg: [11, 14], rate: 0.085, mag: [30, 34], reload: [1.5, 1.8], spread: [0.04, 0.06], speed: 1750, life: 0.9, bloomAdd: 0.005, bloomMax: 0.07, kick: 0.35, alt: 'APUNTAR', ads: 1, shape: { t: 'rifle', len: 44, stock: 1, mag: 'curva', scope: 0 } },
+    ar_tormenta: { name: 'Carabina Tormenta-4', fam: 'cod', tier: 3, kind: 'gun', auto: 0, burst: 3, dmg: [14, 17], rate: 0.32, mag: [24, 30], reload: [1.4, 1.7], spread: [0.02, 0.03], speed: 1850, life: 0.9, bloomAdd: 0.004, bloomMax: 0.05, kick: 0.4, alt: 'APUNTAR', ads: 1, shape: { t: 'rifle', len: 40, stock: 2, mag: 'recta', scope: 1 } },
+    smg_zorro: { name: 'Subfusil Zorro del Desierto', fam: 'cod', tier: 2, kind: 'gun', auto: 1, dmg: [7, 9], rate: 0.05, mag: [25, 32], reload: [1.2, 1.4], spread: [0.08, 0.1], speed: 1600, life: 0.55, bloomAdd: 0.004, bloomMax: 0.08, move: 1.08, kick: 0.2, alt: 'CORRER', shape: { t: 'smg', len: 30, stock: 0, mag: 'recta', scope: 0 } },
+    sg_trueno: { name: 'Escopeta Trueno 15', fam: 'cod', tier: 2, kind: 'gun', auto: 0, pellets: 7, dmg: [12, 15], rate: 0.55, mag: [5, 6], reload: [1.6, 1.9], spread: [0.14, 0.17], speed: 1250, life: 0.38, coverMul: 1.8, selfKnock: 110, kick: 0.9, alt: 'CORREDERA', shape: { t: 'shotgun', len: 44, stock: 1, mag: 'tubo', scope: 0 } },
+    sn_vigia: { name: 'Francotirador Vigía Q33', fam: 'cod', tier: 4, kind: 'gun', auto: 0, ads: 1, dmg: [130, 150], rate: 1.4, mag: [4, 5], reload: [2.6, 3], spread: [0.001, 0.002], speed: 2900, life: 1.3, pierce: 4, coverMul: 2.2, bloomAdd: 0.03, bloomMax: 0.06, move: 0.9, kick: 1, alt: 'MIRA', shape: { t: 'sniper', len: 60, stock: 2, mag: 'caja', scope: 2 } },
+    sn_cerrojo: { name: 'Rifle de cerrojo Kilo', fam: 'cod', tier: 3, kind: 'gun', auto: 0, ads: 1, dmg: [100, 118], rate: 0.85, mag: [5, 6], reload: [2.1, 2.4], spread: [0.002, 0.004], speed: 2500, life: 1.1, pierce: 2, bloomAdd: 0.02, bloomMax: 0.05, move: 0.95, kick: 0.85, alt: 'MIRA', shape: { t: 'sniper', len: 54, stock: 1, mag: 'caja', scope: 1 } },
+    lmg_hades: { name: 'Ametralladora Hades', fam: 'cod', tier: 4, kind: 'gun', auto: 1, dmg: [13, 16], rate: 0.075, mag: [80, 100], reload: [3.6, 4.1], spread: [0.05, 0.08], speed: 1800, life: 0.9, pierce: 1, bloomAdd: 0.003, bloomMax: 0.09, move: 0.82, kick: 0.45, alt: 'BÍPODE', shape: { t: 'lmg', len: 56, stock: 2, mag: 'caja', scope: 0 } },
+    rev_j358: { name: 'Revólver J-358', fam: 'cod', tier: 2, kind: 'gun', auto: 0, dmg: [44, 52], rate: 0.42, mag: [6, 6], reload: [1.9, 2.1], spread: [0.01, 0.02], speed: 1900, life: 0.8, pierce: 1, kick: 0.8, alt: '—', shape: { t: 'pistol', len: 30, stock: 0, mag: 'tambor', scope: 0 } },
+    rl_ariete: { name: 'Lanzacohetes Ariete', fam: 'cod', tier: 5, kind: 'gun', auto: 0, rocket: 130, dmg: [85, 100], rate: 1.35, mag: [1, 1], reload: [2.4, 2.7], spread: [0.01, 0.01], speed: 900, life: 1.6, coverMul: 3, selfKnock: 160, move: 0.88, kick: 1, alt: '—', shape: { t: 'tube', len: 58, stock: 0, mag: 'none', scope: 1 } },
+    cb_silencio: { name: 'Ballesta Silencio', fam: 'cod', tier: 3, kind: 'gun', auto: 0, dmg: [70, 82], rate: 0.85, mag: [1, 1], reload: [0.9, 1.1], spread: [0.003, 0.005], speed: 1500, life: 1.2, pierce: 3, kick: 0.5, alt: 'APUNTAR', ads: 1, shape: { t: 'bow', len: 40, cross: 1 } },
+    // Dead Cells
+    dc_equilibrada: { name: 'Hoja Equilibrada', fam: 'dc', tier: 1, kind: 'blade', combo: 3, dmg: [16, 20], rate: 0.22, range: 70, height: 50, knock: 120, finMul: 1.8, altKind: 'wave', altCd: 2.4, altShots: 1, altDmg: [24, 30], alt: 'CORTE', shape: { t: 'sword', len: 44, curve: 0, guard: 2 } },
+    dc_rencor: { name: 'Espada del Rencor', fam: 'dc', tier: 3, kind: 'blade', combo: 3, dmg: [20, 26], rate: 0.26, range: 76, height: 52, knock: 140, finMul: 2.6, altKind: 'spin', altCd: 3.5, altDmg: [40, 50], alt: 'REMOLINO', shape: { t: 'sword', len: 48, curve: 0.2, guard: 3 } },
+    dc_mandoble: { name: 'Mandoble de la Prisión', fam: 'dc', tier: 3, kind: 'blade', combo: 2, dmg: [48, 60], rate: 0.6, range: 96, height: 76, knock: 320, finMul: 1.9, altKind: 'shell', altCd: 4, altDmg: [60, 72], alt: 'TERREMOTO', move: 0.9, shape: { t: 'sword', len: 60, curve: 0, guard: 4, broad: 1 } },
+    dc_asesino: { name: 'Daga del Asesino', fam: 'dc', tier: 2, kind: 'blade', combo: 3, dmg: [12, 15], rate: 0.15, range: 52, height: 42, knock: 50, finMul: 3.2, altKind: 'throw', altCd: 1.8, altShots: 1, altDmg: [30, 36], alt: 'LANZAR', move: 1.1, lunge: 1, shape: { t: 'dagger', len: 26, curve: 0.3 } },
+    dc_frenetica: { name: 'Espada Frenética', fam: 'dc', tier: 3, kind: 'blade', combo: 5, dmg: [12, 15], rate: 0.11, range: 64, height: 48, knock: 60, finMul: 2.2, altKind: 'wave', altCd: 2, altShots: 3, altDmg: [16, 20], alt: 'FRENESÍ', move: 1.05, shape: { t: 'sword', len: 42, curve: 0.5, guard: 1 } },
+    dc_pedernal: { name: 'Martillo de Pedernal', fam: 'dc', tier: 3, kind: 'blade', combo: 2, dmg: [36, 44], rate: 0.58, range: 74, height: 64, knock: 260, finMul: 1.7, stun: 1.2, altKind: 'shell', altCd: 3.5, altDmg: [50, 60], alt: 'GRIETA DE FUEGO', move: 0.92, shape: { t: 'hammer', len: 50, head: 18 } },
+    dc_latigo: { name: 'Látigo Eléctrico', fam: 'dc', tier: 2, kind: 'blade', combo: 4, dmg: [11, 14], rate: 0.16, range: 120, height: 30, knock: 40, finMul: 1.8, stun: 0.4, altKind: 'wave', altCd: 2.2, altShots: 2, altDmg: [18, 22], alt: 'DESCARGA', shape: { t: 'whip', len: 56 } },
+    dc_hielo: { name: 'Arco de Hielo', fam: 'dc', tier: 3, kind: 'gun', auto: 0, stun: 1.4, dmg: [30, 36], rate: 0.45, mag: [12, 14], reload: [1.2, 1.4], spread: [0.01, 0.02], speed: 1300, life: 1.1, pierce: 1, kick: 0.3, alt: '—', shape: { t: 'bow', len: 44, cross: 0 } },
+    dc_cuchillos: { name: 'Cuchillos Arrojadizos', fam: 'dc', tier: 2, kind: 'gun', auto: 1, dmg: [9, 11], rate: 0.12, mag: [18, 22], reload: [1, 1.2], spread: [0.03, 0.05], speed: 1500, life: 0.7, pierce: 1, kick: 0.1, alt: '—', move: 1.05, shape: { t: 'dagger', len: 18, curve: 0, fan: 1 } },
+    dc_esparta: { name: 'Sandalias de Esparta', fam: 'dc', tier: 1, kind: 'blade', combo: 3, dmg: [12, 15], rate: 0.24, range: 54, height: 40, knock: 480, finMul: 2, altKind: 'kick', altCd: 1.6, altDmg: [24, 30], alt: 'PATADA', move: 1.06, shape: { t: 'boot', len: 22 } },
+    // Monster Hunter Online
+    mh_granespada: { name: 'Gran Espada del Cazador', fam: 'mho', tier: 4, kind: 'blade', combo: 2, dmg: [56, 68], rate: 0.8, range: 104, height: 84, knock: 380, finMul: 2.2, altKind: 'shell', altCd: 4.5, altDmg: [90, 110], alt: 'TAJO CARGADO', move: 0.86, shape: { t: 'sword', len: 64, curve: 0, guard: 5, broad: 2 } },
+    mh_espadalarga: { name: 'Espada Larga Espíritu', fam: 'mho', tier: 3, kind: 'blade', combo: 4, dmg: [22, 27], rate: 0.24, range: 94, height: 50, knock: 140, finMul: 2.4, altKind: 'spin', altCd: 3, altDmg: [44, 52], alt: 'TAJO ESPIRITUAL', shape: { t: 'sword', len: 62, curve: 0.3, guard: 1 } },
+    mh_dobles: { name: 'Hojas Dobles Demoníacas', fam: 'mho', tier: 3, kind: 'blade', combo: 6, dmg: [10, 13], rate: 0.1, range: 58, height: 46, knock: 50, finMul: 2.5, altKind: 'spin', altCd: 2.6, altDmg: [30, 36], alt: 'MODO DEMONIO', move: 1.08, shape: { t: 'dagger', len: 30, curve: 0.2, twin: 1 } },
+    mh_martillo: { name: 'Martillo del Cazador', fam: 'mho', tier: 3, kind: 'blade', combo: 3, dmg: [38, 46], rate: 0.48, range: 72, height: 62, knock: 240, finMul: 2, stun: 1.6, altKind: 'launch', altCd: 3.5, altDmg: [56, 66], alt: 'GOLPE GIRATORIO', move: 0.95, shape: { t: 'hammer', len: 50, head: 22 } },
+    mh_lanza: { name: 'Lanza Bastión', fam: 'mho', tier: 3, kind: 'blade', combo: 3, dmg: [26, 32], rate: 0.3, range: 118, height: 30, knock: 160, finMul: 1.8, altKind: 'guard', altCd: 0.5, alt: 'ESCUDO (mantener)', move: 0.9, shape: { t: 'lance', len: 66, shield: 1 } },
+    mh_pistolanza: { name: 'Pistolanza Explosiva', fam: 'mho', tier: 4, kind: 'blade', combo: 3, dmg: [28, 34], rate: 0.34, range: 104, height: 34, knock: 180, finMul: 1.8, altKind: 'shell', altCd: 2.2, altDmg: [55, 65], alt: 'PROYECTIL', shape: { t: 'lance', len: 62, shield: 0, gun: 1 } },
+    mh_glaive: { name: 'Glaive Insecto', fam: 'mho', tier: 3, kind: 'blade', combo: 4, dmg: [18, 22], rate: 0.2, range: 88, height: 54, knock: 110, finMul: 2, altKind: 'launch', altCd: 1.8, altDmg: [30, 36], alt: 'SALTO DE BÓVEDA', move: 1.04, shape: { t: 'glaive', len: 58 } },
+    mh_arco: { name: 'Arco de Cazador', fam: 'mho', tier: 3, kind: 'gun', auto: 0, pellets: 3, dmg: [18, 22], rate: 0.45, mag: [10, 12], reload: [1.1, 1.3], spread: [0.05, 0.06], speed: 1400, life: 1, pierce: 1, kick: 0.25, alt: '—', shape: { t: 'bow', len: 46, cross: 0 } },
+    mh_ballesta_l: { name: 'Ballesta Ligera de Cacería', fam: 'mho', tier: 2, kind: 'gun', auto: 1, dmg: [13, 16], rate: 0.13, mag: [20, 24], reload: [1.4, 1.6], spread: [0.03, 0.04], speed: 1700, life: 0.9, kick: 0.3, alt: '—', shape: { t: 'bowgun', len: 42, heavy: 0 } },
+    mh_ballesta_p: { name: 'Ballesta Pesada de Asedio', fam: 'mho', tier: 4, kind: 'gun', auto: 0, rocket: 90, dmg: [46, 56], rate: 0.85, mag: [4, 5], reload: [2.6, 3], spread: [0.01, 0.02], speed: 1350, life: 1.2, coverMul: 2.5, selfKnock: 90, move: 0.85, kick: 0.9, alt: '—', shape: { t: 'bowgun', len: 56, heavy: 1 } }
+  };
+  Object.assign(arms, ARMS2);
+  // Contrato: precio por nivel (1 básica … 5 legendaria); clásicas reubicadas en la misma escala
+  const CONTRACT_TIER = [0, 150, 260, 420, 650, 950];
+  const CLASSIC_TIER = { pistol: 1, katana: 2, rifle: 2, axe: 3, smg: 2, shotgun: 2, sniper: 4, lmg: 4, dagas: 2, cetro: 5 };
+  const contractPrice = (arch) => CONTRACT_TIER[(arms[arch] && arms[arch].tier) || CLASSIC_TIER[arch] || 2];
   const archetypes = {
     pistol: 'Pistola táctica',
     katana: 'Katana de energía cinética',
@@ -132,6 +175,7 @@
     axe: 'Hacha mecánica transformable',
     smg: arms.smg.name, shotgun: arms.shotgun.name, sniper: arms.sniper.name, lmg: arms.lmg.name, dagas: arms.dagas.name, cetro: arms.cetro.name
   };
+  for (const [k, v] of Object.entries(ARMS2)) archetypes[k] = v.name;
   // Camuflajes propios de cada arma nueva (3 de tienda + 1 de élite con materiales) y élite para las clásicas.
   // [arma, prefijo, [nombre, patrón, colores]...]: se expande una sola vez al cargar.
   const NEWCAMO = {
@@ -149,6 +193,14 @@
     sniper: ['Ojo del Leviatán', 'venas', [0x200006, 0xff2020, 0xffffff]], lmg: ['Tormenta de Acero', 'damasco', [0x9aa4ad, 0x3a424a, 0xffffff]],
     dagas: ['Sangre de Rey', 'cristal', [0xff2a3a, 0x300006, 0xffd0d0]], cetro: ['Majestad Eterna', 'cristal', [0xffd34a, 0x5a3a00, 0xffffff]]
   };
+  // Dos camuflajes exclusivos por cada arma del arsenal extendido (patrón + paleta propios por arma)
+  const PATS = ['urbano', 'tigre', 'acro', 'oxido', 'grabado', 'hexa', 'carbono', 'damasco', 'cristal', 'venas', 'escamas', 'peligro'];
+  const PALS = [[0x1a2a3a, 0x39d7ff, 0xffffff], [0x2a1a0a, 0xffb020, 0x6a3a10], [0x101418, 0xff3df0, 0x39d7ff], [0x2a3020, 0x7a8a5a, 0xc8d0a0], [0x2a0a0a, 0xff3b3b, 0xffd0d0],
+    [0x0a1a10, 0x5dff7a, 0xd0ffd8], [0x1a1a22, 0x9b5cff, 0xe0d0ff], [0x3a3228, 0xd8b070, 0xfff0c8], [0xd0d8e0, 0x5a6a7a, 0xffffff], [0x200a1a, 0xff80e0, 0xffe0f0]];
+  Object.keys(ARMS2).forEach((arch, i) => {
+    const nm = ARMS2[arch].name.split(' ')[0];
+    NEWCAMO[arch] = [[`${nm} · Firma de Fábrica`, PATS[i % PATS.length], PALS[i % PALS.length]], [`${nm} · Edición de Veterano`, PATS[(i * 5 + 3) % PATS.length], PALS[(i * 3 + 7) % PALS.length]]];
+  });
   for (const [arch, list] of Object.entries(NEWCAMO)) list.forEach(([name, pattern, colors], i) =>
     weaponSkins.push({ id: arch + '_' + i, arch, name, price: 900 + i * 450, pattern, colors, desc: 'Diseñado para la geometría de ' + archetypes[arch].toLowerCase() + '.' }));
   for (const [arch, [name, pattern, colors]] of Object.entries(ELITE))
@@ -159,5 +211,5 @@
     arco: 'Arco eléctrico: encadena a un enemigo cercano',
     ejecutor: 'Ejecutor: +50% de daño a enemigos bajo 30%'
   };
-  return { arms, weaponSkins, killFx, skins, trails, upgrades, upgradeCost, missions, descents, rarities, archetypes, perks };
+  return { arms, contractPrice, weaponSkins, killFx, skins, trails, upgrades, upgradeCost, missions, descents, rarities, archetypes, perks };
 });

@@ -26,7 +26,8 @@ function rollRarity(rng, boost) {
 function generateWeapon(rng, profile) {
   const A = Catalog.arms;
   // Botín: clásicas + arsenal ampliado; el Cetro sólo si se desbloqueó en la guarida secreta
-  const archs = ['katana', 'rifle', 'axe', 'pistol', 'smg', 'shotgun', 'sniper', 'lmg', 'dagas'];
+  // Botín: todo el arsenal salvo las armas especiales (Cetro secreto, Pistola de clavos de penalización)
+  const archs = Object.keys(Catalog.archetypes).filter(k => k !== 'cetro' && k !== 'clavos');
   const owned = (profile && profile.arms) || [];
   if (owned.includes('cetro')) archs.push('cetro');
   let arch = rng.pick(archs);
@@ -72,7 +73,8 @@ function generateWeapon(rng, profile) {
       coverMul: d.coverMul || 1, selfKnock: d.selfKnock || 0, bloomAdd: d.bloomAdd || 0, bloomMax: d.bloomMax || 0, auto: !!d.auto, ads: !!d.ads,
       move: d.move || 1, kick: d.kick || 0.5, range: d.range, height: d.height, knock: d.knock || 80, combo: d.combo, finMul: d.finMul,
       altCd: d.altCd || 0, altShots: d.altShots || 0, altDmg: d.altDmg ? R2(d.altDmg) : 0, shake: d.kind === 'gun' ? 0.06 + 0.2 * (d.kick || 0.5) : 0.12,
-      gun: d.kind === 'gun', blade: d.kind === 'blade'
+      gun: d.kind === 'gun', blade: d.kind === 'blade',
+      burst: d.burst || 0, rocket: d.rocket || 0, stun: d.stun || 0, altKind: d.altKind || 'wave', lunge: !!d.lunge, fam: d.fam || ''
     });
     if (w.altDmg) w.altDmg *= rar.mul;
   } else {
@@ -91,7 +93,7 @@ function generateWeapon(rng, profile) {
   if (rarity === 3) w.perks.push(rng.pick(perkKeys));
   else if (rarity >= 1 && rng.chance(0.3)) w.perks.push(rng.pick(perkKeys));
   if (mods.flujo_cristalizado) { const left = perkKeys.filter(k => !w.perks.includes(k)); if (left.length) w.perks.push(rng.pick(left)); }
-  const base = { katana: 'Katana', rifle: 'Rifle', axe: 'Hacha', pistol: 'Pistola', smg: 'Subfusil', shotgun: 'Escopeta', sniper: 'Francotirador', lmg: 'M42', dagas: 'Dagas', cetro: 'Cetro' }[arch];
+  const base = { katana: 'Katana', rifle: 'Rifle', axe: 'Hacha', pistol: 'Pistola', smg: 'Subfusil', shotgun: 'Escopeta', sniper: 'Francotirador', lmg: 'M42', dagas: 'Dagas', cetro: 'Cetro' }[arch] || (A[arch] ? A[arch].name : 'Arma');
   w.name = `${base} ${rng.pick(PREFIX)} "${rng.pick(NICK)}" MK-${rng.int(2, 9)}`;
   return w;
 }
@@ -101,7 +103,7 @@ function publicWeapon(w) {
     arch: w.arch, name: w.name, rarity: w.rarity, rarityName: w.rarityName, color: w.color,
     perks: w.perks, attachments: w.attachments, mag: w.mag || 0,
     dmg: Math.round(w.dmg), rate: w.rate, cannonRate: w.cannonRate || 0, reload: w.reload || 0,
-    altCd: w.altCd, shake: w.shake, gun: !!w.gun, blade: !!w.blade, auto: !!w.auto, ads: !!w.ads, pellets: w.pellets || 1, combo: w.combo || 0, kick: w.kick || 0
+    speed: w.speed || 0, life: w.life || 0.9, altCd: w.altCd, shake: w.shake, gun: !!w.gun, blade: !!w.blade, auto: !!w.auto, ads: !!w.ads, pellets: w.pellets || 1, combo: w.combo || 0, kick: w.kick || 0, burst: w.burst || 0, altKind: w.altKind || '', fam: w.fam || ''
   };
 }
 

@@ -263,6 +263,9 @@ G.WeaponArt = (function () {
     }
   };
 
+  // Arsenal extendido: siluetas paramétricas declaradas en el catálogo
+  if (G.WeaponShapes) G.WeaponShapes.register(ARMS, SIZE, KEY);
+
   // ---------------------------------------------------------------- patrones de camuflaje
   // Cada patrón rellena el rectángulo completo; la máscara del arma recorta dónde se ve.
   const PAT = {

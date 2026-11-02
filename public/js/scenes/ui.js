@@ -70,6 +70,7 @@ G.UIScene = class extends Phaser.Scene {
     this.buildSheet();
     this.buildReport();
     this.buildMedals();
+    this.buildTutorial();
     this.input.keyboard.addCapture('TAB');
 
     // Red
@@ -101,7 +102,8 @@ G.UIScene = class extends Phaser.Scene {
             if (G.Net.mode === 'br' && e[4] !== undefined) {
               const mine = G.Net.roster.get(G.Net.id);
               const won = mine && mine.team === e[4];
-              this.showReport(won, won ? '¡VICTORIA DEL ESCUADRÓN!' : `ELIMINADOS · PUESTO #${r && r.place ? r.place : '?'}`, r);
+              const tdmEnd = G.Net.runInfo && G.Net.runInfo.tdm;
+              this.showReport(won, won ? '¡VICTORIA DEL ESCUADRÓN!' : tdmEnd ? (e[4] === -1 ? 'EMPATE' : 'DERROTA') : `ELIMINADOS · PUESTO #${r && r.place ? r.place : '?'}`, r);
               G.Sfx.play(won ? 'victory' : 'fail');
               break;
             }
@@ -146,7 +148,9 @@ G.UIScene = class extends Phaser.Scene {
     if (mode === 'run') {
       const ri = G.Net.runInfo || {};
       const d = LV.Campaign.descents(ri.variant || 'solo')[ri.idx || 0];
-      this.banner(d.boss ? 'DESCENSO FINAL DE CAPA' : 'DESCENSO INICIADO', d.name + (d.boss ? ' · JEFE: ' + LV.Campaign.bosses[d.boss].name : ' · Llega al elevador'), '#39d7ff', 3.5);
+      const rti = G.Net.runInfo;
+      if (rti && rti.tdm) this.banner('5 CONTRA 5', LV.TDMGen.MAPS[rti.map | 0].name + ' · primer equipo en 30 bajas', '#ffb020', 3.5);
+      else this.banner(d.boss ? 'DESCENSO FINAL DE CAPA' : 'DESCENSO INICIADO', d.name + (d.boss ? ' · JEFE: ' + LV.Campaign.bosses[d.boss].name : ' · Llega al elevador'), '#39d7ff', 3.5);
     } else this.banner('CELDA DE DESPRESURIZACIÓN', 'Zona neutral · tu Núcleo fue impreso en un exotraje nuevo', '#39d7ff', 2.5);
     this.tGear.setText('');
   }
@@ -161,10 +165,15 @@ G.UIScene = class extends Phaser.Scene {
     const bars = this.add.graphics();
     bars.fillStyle(0x000000, 1).fillRect(0, 0, 1280, 70).fillRect(0, 650, 1280, 70);
     bars.lineStyle(1, 0x39d7ff, 0.4).lineBetween(0, 70, 1280, 70).lineBetween(0, 650, 1280, 650);
-    this.cTitle = this.T(640, 120, 30, '#39d7ff', { fontStyle: 'bold' }).setOrigin(0.5);
-    this.cPortrait = this.add.image(250, 400, 'pt_commander').setDisplaySize(200, 200);
-    this.cName = this.T(400, 316, 18, '#39d7ff', { fontStyle: 'bold' });
-    this.cText = this.T(400, 350, 21, '#e8f4ff', { wordWrap: { width: 780 }, lineSpacing: 8 });
+    // Viñeta ilustrada a pantalla completa + franja inferior de subtítulos (estilo novela gráfica)
+    this.cArt = this.add.image(640, 360, 'px').setDisplaySize(1280, 580);
+    this.cShade = this.add.graphics();
+    this.cShade.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0, 0.92, 0.92).fillRect(0, 430, 1280, 220);
+    this.cShade.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.75, 0.75, 0, 0).fillRect(0, 70, 1280, 90);
+    this.cTitle = this.T(640, 104, 30, '#39d7ff', { fontStyle: 'bold' }).setOrigin(0.5);
+    this.cPortrait = this.add.image(110, 560, 'pt_commander').setDisplaySize(120, 120);
+    this.cName = this.T(200, 494, 18, '#39d7ff', { fontStyle: 'bold' });
+    this.cText = this.T(200, 524, 20, '#e8f4ff', { wordWrap: { width: 1000 }, lineSpacing: 6 });
     this.cHint = this.T(1240, 690, 12, '#5f8292').setOrigin(1, 1).setText('ESPACIO / E / clic continuar · ESC saltar');
     this.cProg = this.T(40, 690, 12, '#5f8292').setOrigin(0, 1);
     this.cChoiceG = this.add.graphics();
@@ -176,12 +185,13 @@ G.UIScene = class extends Phaser.Scene {
       z.on('pointerdown', () => { if (this.cine && this.cine.choosing) { this.cine.pick = i; this.confirmChoice(); } });
       return { t, d, z };
     });
-    c.add([bg, bars, this.cTitle, this.cPortrait, this.cName, this.cText, this.cHint, this.cProg, this.cChoiceG]);
+    c.add([bg, this.cArt, this.cShade, bars, this.cTitle, this.cPortrait, this.cName, this.cText, this.cHint, this.cProg, this.cChoiceG]);
     for (const ch of this.cChoices) c.add([ch.t, ch.d, ch.z]);
     this.cineC = c;
   }
   playCine(id, done) {
-    const script = G.Cine.scripts[id];
+    const script = G.Cine.scripts[id] || G.CineArt.scripts[id];
+    this.cineId = id;
     if (!script) { if (done) done(); return; }
     this.closeDialog(true);
     this.cine = { script, i: 0, typed: 0, done };
@@ -194,8 +204,16 @@ G.UIScene = class extends Phaser.Scene {
     c.typed = 0;
     this.cName.setText(sp.name).setColor(sp.color);
     this.cText.setText('');
-    if (sp.portrait) this.cPortrait.setTexture(sp.portrait).setDisplaySize(200, 200).setVisible(true);
-    else this.cPortrait.setTexture('core').setDisplaySize(120, 120).setVisible(true);
+    if (sp.portrait) this.cPortrait.setTexture(sp.portrait).setDisplaySize(120, 120).setVisible(true);
+    else this.cPortrait.setTexture('core').setDisplaySize(80, 80).setVisible(true);
+    // Viñeta del momento + paneo lento (Ken Burns); sólo cambia la textura si cambia la escena
+    const art = G.CineArt.key(this, this.cineId, c.i);
+    this.tweens.killTweensOf(this.cArt);
+    if (this.cArt.texture.key !== art) { this.cArt.setTexture(art).setAlpha(0); this.tweens.add({ targets: this.cArt, alpha: 1, duration: 450 }); }
+    else this.cArt.setAlpha(1);
+    this.cArt.setDisplaySize(1280, 580).setPosition(640, 360);
+    const sx = this.cArt.scaleX, sy = this.cArt.scaleY;
+    this.tweens.add({ targets: this.cArt, scaleX: sx * 1.08, scaleY: sy * 1.08, x: 640 + (c.i % 2 ? -30 : 30), duration: 7000, ease: 'Sine.easeOut' });
     this.cProg.setText(`${c.i + 1}/${c.script.lines.length}`);
   }
   cineNext() {
@@ -246,6 +264,72 @@ G.UIScene = class extends Phaser.Scene {
     this.feed.unshift(last);
     last.life = 7;
     last.t.setText(text).setColor(Phaser.Display.Color.IntegerToColor(color || 0x39d7ff).rgba);
+  }
+
+  // ------------------------------------------------------------ tutorial interactivo (primer acceso)
+  // Cada paso se completa HACIENDO la acción (no leyendo): el panel muestra la tecla, una flecha guía
+  // hacia el NPC objetivo y una barra de progreso. F1 lo omite. Se guarda en el perfil al terminar.
+  buildTutorial() {
+    const c = this.add.container(640, 92).setDepth(17).setVisible(false);
+    const g = this.add.graphics();
+    g.fillStyle(0x0c0f13, 0.94).fillRect(-300, 0, 600, 74); g.lineStyle(2, 0xffb020, 1).strokeRect(-300, 0, 600, 74);
+    g.fillStyle(0xffb020, 1).fillRect(-300, 0, 600, 3);
+    const t1 = this.add.text(-284, 10, '', { fontFamily: G.FONT, fontSize: '12px', color: '#ffb020', fontStyle: 'bold' });
+    const t2 = this.add.text(-284, 28, '', { fontFamily: G.FONT, fontSize: '19px', color: '#ffffff', fontStyle: 'bold', wordWrap: { width: 568 } });
+    const t3 = this.add.text(284, 10, 'F1 omitir', { fontFamily: G.FONT, fontSize: '11px', color: '#5d6b77' }).setOrigin(1, 0);
+    const bar = this.add.graphics();
+    c.add([g, t1, t2, t3, bar]);
+    this.tut = { c, t1, t2, bar, step: -1, done: false, x0: null, pulse: 0, arrow: this.add.graphics().setDepth(17) };
+    this.input.keyboard.on('keydown-F1', () => { if (this.tut.step >= 0 && !this.tut.done) this.finishTutorial(true); });
+    this.TUT = [
+      { k: 'A / D', txt: 'Muévete por la Celda con A y D', ok: (h) => Math.abs(h.me.body.x - this.tut.x0) > 140 },
+      { k: 'ESPACIO', txt: 'Salta con ESPACIO (vuelve a pulsarlo en el aire: doble salto)', ok: (h) => ((h.tapLog || 0) & LV.C.B.JUMP) !== 0 || (!h.me.body.onGround && h.me.body.vy < 0) || h.me.body.y < this.tut.y0 - 24 },
+      { k: 'SHIFT', txt: 'Esquiva con un dash: SHIFT (eres invulnerable durante el impulso)', ok: (h) => ((h.tapLog || 0) & LV.C.B.DASH) !== 0 || h.me.body.dashT > 0 },
+      { k: 'E', txt: 'Habla con NOVA, la sastre (la flecha te guía): pulsa E a su lado', role: 'tailor', ok: () => this.dlg && this.dlg.role === 'tailor' },
+      { k: 'E', txt: 'Visita a KAI "SOMBRA": contratos de armas para tu próximo descenso', role: 'trafficker', ok: () => this.dlg && this.dlg.role === 'trafficker' },
+      { k: 'TAB', txt: 'Abre tu hoja de operaciones con TAB (equipo, materiales, contratos)', ok: () => this.sheetOn },
+      { k: 'E', txt: 'Ve con el COMANDANTE VEX y marca LISTO para tu primer descenso', role: 'commander', ok: () => { const r = G.Net.roster.get(G.Net.id); return r && r.ready; } }
+    ];
+  }
+  finishTutorial(skipped) {
+    const T = this.tut; T.done = true; T.c.setVisible(false); T.arrow.clear();
+    G.Net.act({ type: 'seen', id: 'tutorial' });
+    if (!skipped) this.medal('ENTRENAMIENTO COMPLETO', 0x7dff4f);
+  }
+  updateTutorial(dt) {
+    const T = this.tut, prof = G.Net.profile;
+    if (!T || T.done) return;
+    if (this.mode !== 'hub' || !prof || prof.seen.tutorial || (prof.stats && prof.stats.runs > 0 && T.step < 0) || this.cine) { T.c.setVisible(false); T.arrow.clear(); return; }
+    const h = this.scene.get('Hub');
+    if (!h || !h.me || !h.me.body) return;
+    if (T.step < 0) { T.step = 0; T.x0 = h.me.body.x; }
+    const S = this.TUT[T.step];
+    if (h.me.body.onGround) this.tut.y0 = h.me.body.y;   // referencia de suelo para detectar el salto
+    const okNow = S.ok(h); h.tapLog = 0;
+    if (okNow) {
+      T.step++; G.Sfx.play('ui_ok'); this.flash = 0;
+      if (T.step >= this.TUT.length) return this.finishTutorial(false);
+      if (T.step === 1) T.x0 = h.me.body.x;
+      return;
+    }
+    T.c.setVisible(!this.dlg || T.step >= 3);
+    T.t1.setText(`TUTORIAL · PASO ${T.step + 1}/${this.TUT.length} · TECLA [${S.k}]`);
+    T.t2.setText(S.txt);
+    T.pulse += dt;
+    T.bar.clear().fillStyle(0x232c35, 1).fillRect(-284, 64, 568, 4).fillStyle(0xffb020, 1).fillRect(-284, 64, 568 * T.step / this.TUT.length, 4);
+    // Flecha guía hacia el NPC del paso (en el borde de la pantalla si está fuera de cámara)
+    T.arrow.clear();
+    if (S.role && !this.dlg) {
+      const v = h.npcViews && h.npcViews.find(n => n.npc.role === S.role);
+      if (v) {
+        const cam = h.cameras.main, sx = (v.x - cam.worldView.x) * cam.zoom, sy = (v.y - 70 - cam.worldView.y) * cam.zoom;
+        const ax = Phaser.Math.Clamp(sx, 40, 1240), ay = Phaser.Math.Clamp(sy, 190, 680), bob = Math.sin(T.pulse * 6) * 6;
+        const ang = (sx === ax && sy === ay) ? Math.PI / 2 : Math.atan2(sy - ay, sx - ax);
+        const px = ax - Math.cos(ang) * bob, py = ay - Math.sin(ang) * bob;
+        T.arrow.fillStyle(0xffb020, 1).fillTriangle(px + Math.cos(ang) * 16, py + Math.sin(ang) * 16, px + Math.cos(ang + 2.5) * 12, py + Math.sin(ang + 2.5) * 12, px + Math.cos(ang - 2.5) * 12, py + Math.sin(ang - 2.5) * 12);
+        T.arrow.lineStyle(2, 0x000000, 0.6).strokeCircle(px, py, 20);
+      }
+    }
   }
 
   // ------------------------------------------------------------ medallas en vivo (sólo cliente, cola de 1 en 1)
@@ -613,6 +697,7 @@ G.UIScene = class extends Phaser.Scene {
     this.flash = Math.max(0, this.flash - dt * 1.6);
     this.updateReport(dt);
     this.updateMedals(dt);
+    G.safe('Tutorial', this.updateTutorial, this, dt);
     this.redFlash.setAlpha(this.flash * 0.5);
     for (let i = 0; i < this.feed.length; i++) {
       const f = this.feed[i];
@@ -794,7 +879,8 @@ G.UIScene = class extends Phaser.Scene {
     this.tDds.setText(`AMENAZA x${(dd[1] / 100).toFixed(2)} · DAÑO x${(dd[2] / 100).toFixed(2)} · AGRESIVIDAD x${(dd[3] / 100).toFixed(2)} · ${dd[0]} VIVOS`);
     let i = 0;
     const myTeam = G.Net.mode === 'br' && G.Net.roster.get(G.Net.id) ? G.Net.roster.get(G.Net.id).team : null;
-    if (snap.o.br) this.tDds.setText(`BATALLA · ${snap.o.br.ta}/${snap.o.br.tt} ESCUADRONES EN PIE · ${dd[0]} NÚCLEOS VIVOS`);
+    if (snap.o.br && snap.o.br.tdm) this.tDds.setText(`5 CONTRA 5 · ${snap.o.br.sc[0]} - ${snap.o.br.sc[1]} · META ${snap.o.br.goal}`);
+    else if (snap.o.br) this.tDds.setText(`BATALLA · ${snap.o.br.ta}/${snap.o.br.tt} ESCUADRONES EN PIE · ${dd[0]} NÚCLEOS VIVOS`);
     for (const t of snap.p) {
       if (i >= 10) break;
       const r = G.Net.roster.get(t[0]);
@@ -842,7 +928,8 @@ G.UIScene = class extends Phaser.Scene {
     const prof2 = G.Net.profile;
     // (el contrato secundario ya se compone junto al subtítulo del arma: un solo setText por frame)
     // Apagón: oscuridad total salvo el haz frontal de la linterna (sigue posición y puntería)
-    const blackout = o.ev && o.ev[0] === 'apagon';
+    let blackout = o.ev && o.ev[0] === 'apagon';
+    if (!blackout && run && run.level && run.level.zone === 'noche') { const mp0 = run.myPos(); blackout = !(mp0 && LV.LevelGen.roomIdAt(run.level, mp0.x, mp0.y - 20) === run.level.arena.id); }
     let lit = false;
     if (blackout && run && run.cameras) {
       const mp = run.myPos(), cam = run.cameras.main, mv = run.players && run.players.get(G.Net.id);
@@ -851,7 +938,10 @@ G.UIScene = class extends Phaser.Scene {
     if (!lit) this.flashlight.setVisible(false);
     this.dark.setAlpha(blackout && !lit ? 0.62 : mutHere === 'niebla' ? 0.5 : 0);
     this.orbFx.setAlpha(o.orb > 0 ? 0.12 + 0.12 * Math.sin(performance.now() / 120) + (14 - o.orb) * 0.02 : 0);
-    if (o.br) {
+    if (o.br && o.br.tdm) {
+      const b = o.br, mine = G.Net.roster.get(G.Net.id), t = mine ? mine.team : 0;
+      objText = `ALIADOS ${b.sc[t]}  —  ${b.sc[1 - t]} RIVALES · META ${b.goal} · ${Math.floor(b.tl / 60)}:${String(b.tl % 60).padStart(2, '0')}` + (objText ? '\n' + objText : '');
+    } else if (o.br) {
       const b = o.br;
       const fl = b.fs > 0 ? `INUNDACIÓN EN ${b.fs} s` : '⚠ LA INUNDACIÓN DESCIENDE';
       const bs = b.bd ? 'CORAZÓN ABATIDO · ¡ACABA CON LOS RIVALES!' : b.bt > 0 ? `CORAZÓN DESPIERTA EN ${b.bt} s` : 'CORAZÓN DESPIERTO EN LA CÁMARA CENTRAL';
@@ -870,7 +960,7 @@ G.UIScene = class extends Phaser.Scene {
     } else this.tBoss.setText('');
     // Estado del jugador
     let center = '';
-    if (flags & 16) center = G.Net.mode === 'br' ? 'ELIMINADO\nObservas a tu escuadrón' : 'HAS CAÍDO EN COMBATE\nModo espectador · tu escuadrón aún puede completar la misión';
+    if (flags & 16) center = G.Net.runInfo && G.Net.runInfo.tdm ? 'BAJA CONFIRMADA\nReapareces en unos segundos' : G.Net.mode === 'br' ? 'ELIMINADO\nObservas a tu escuadrón' : 'HAS CAÍDO EN COMBATE\nModo espectador · tu escuadrón aún puede completar la misión';
     else if (flags & 8) center = `DERRIBADO · ${myT[7]}s\n${me.st > 0 ? `Mantén [E] para inyectar estimulante (${me.st})` : 'Espera a que un aliado te reanime'}`;
     if (o.w > 0) center = `VENTANA TÁCTICA ${o.w.toFixed(1)}s\nTodo el escuadrón está derribado` + (center ? '\n' + center.split('\n')[1] : '');
     this.tCenter.setText(center).setColor('#ff6b6b');

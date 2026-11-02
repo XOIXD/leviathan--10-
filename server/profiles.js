@@ -135,6 +135,12 @@ function claimSeason(p, tier) {
   if (sp.claimed.includes(tier | 0)) return { ok: false, msg: 'Ya reclamaste esa recompensa.' };
   if (sp.pts < T.pts) return { ok: false, msg: `Necesitas ${T.pts} puntos de temporada (tienes ${sp.pts}).` };
   sp.claimed.push(tier | 0);
+  if (T.reward.camo2) {
+    const camo = Campaign.seasonCamo(sp.id + 'b');
+    if (camo && !p.wskinOwned.includes(camo.id)) p.wskinOwned.push(camo.id);
+    if (camo) p.wskins[camo.arch] = camo.id;
+    return { ok: true, msg: `¡${camo ? camo.name : 'Acabado'} obtenido! Exclusivo de esta temporada.` };
+  }
   if (T.reward.camo) {
     const camo = Campaign.seasonCamo(sp.id);
     if (camo && !p.wskinOwned.includes(camo.id)) p.wskinOwned.push(camo.id);

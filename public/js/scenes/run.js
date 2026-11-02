@@ -8,10 +8,16 @@ G.RunScene = class extends G.WorldScene {
     const info = G.Net.runInfo;
     const br = info.mode === 'br';
     this.br = br;
-    const D = br ? { id: 'BR', idx: 6, layer: 4, boss: 'heart', gen: {}, name: 'Batalla de Escuadrones' } : LV.Campaign.descents(info.variant || 'solo')[info.idx || 0];
+    const tdm = !!info.tdm, TM = tdm ? LV.TDMGen.MAPS[info.map | 0] : null;
+    const D = tdm ? { id: 'TDM', idx: 0, layer: 4, boss: null, gen: {}, name: '5 contra 5 · ' + TM.name }
+      : br ? { id: 'BR', idx: 6, layer: 4, boss: 'heart', gen: {}, name: 'Batalla de Escuadrones' } : LV.Campaign.descents(info.variant || 'solo')[info.idx || 0];
     this.D = D;
-    this.biome = br ? { tint: 0x7fb09a, tile: 0xc8e8d0, back: 0x07140f, accent: 0x7dff4f } : LV.Campaign.layers[D.layer - 1];
-    const L = br ? LV.BRGen.generate(info.seed, info.teams) : LV.LevelGen.generate(info.seed, info.n, D.gen);
+    // 5 contra 5: tileset y paleta propios del mapa (ninguno se repite)
+    this.tileKey = tdm ? G.TDMArt.tileset(this, info.map | 0) : 'tiles';
+    this.biome = tdm ? { tint: TM.pal[1], tile: 0xffffff, back: TM.back, accent: TM.pal[2] }
+      : br ? { tint: 0x7fb09a, tile: 0xc8e8d0, back: 0x07140f, accent: 0x7dff4f } : LV.Campaign.layers[D.layer - 1];
+    const L = tdm ? LV.TDMGen.generate(info.map | 0) : br ? LV.BRGen.generate(info.seed, info.teams) : LV.LevelGen.generate(info.seed, info.n, D.gen);
+    this.zoneViews = G.ZoneArt.build(this, L);   // decoración y luz propias de la zona (antes que las coberturas)
     const destroyed = new Set(info.destroyed || []);
     for (const cv of L.covers) cv.alive = !destroyed.has(cv.id);
     for (const gid of info.openGates || []) for (const idx of L.gates[gid].tiles) L.tiles[idx] = 0;
@@ -39,6 +45,8 @@ G.RunScene = class extends G.WorldScene {
       G.UI.playCine(loop, () => G.Net.act({ type: 'seen', id: loop }));
     } else if (G.Net.profile && !G.Net.profile.seen['layer' + D.layer]) {
       G.UI.playCine('layer' + D.layer, () => G.Net.act({ type: 'seen', id: 'layer' + D.layer }));
+    } else if (L.zone && G.Net.profile && !G.Net.profile.seen['z_' + L.zone]) {
+      G.UI.playCine('z_' + L.zone, () => G.Net.act({ type: 'seen', id: 'z_' + L.zone }));
     }
     this.laserSfxT = 0;
     this.lastBossFlags = 0;
@@ -62,7 +70,7 @@ G.RunScene = class extends G.WorldScene {
     }
     const a = L.arena;
     this.add.image(a.x + a.w / 2, a.floorTop - 260, 'glow').setScale(12, 6).setTint(0xff2020).setAlpha(0.12).setBlendMode(Phaser.BlendModes.ADD).setDepth(-15);
-    this.add.text(a.x + a.w / 2, a.floorTop - 380, this.D.boss ? 'ARENA · ' + LV.Campaign.bosses[this.D.boss].name : 'ANDÉN DE EXTRACCIÓN', { fontFamily: G.FONT, fontSize: '40px', fontStyle: 'bold', color: '#3a1216' }).setOrigin(0.5).setDepth(-14);
+    this.add.text(a.x + a.w / 2, a.floorTop - 380, this.D.id === 'TDM' ? this.level.map.name.toUpperCase() : this.D.boss ? 'ARENA · ' + LV.Campaign.bosses[this.D.boss].name : 'ANDÉN DE EXTRACCIÓN', { fontFamily: G.FONT, fontSize: '40px', fontStyle: 'bold', color: '#3a1216' }).setOrigin(0.5).setDepth(-14);
   }
 
   buildObjects(L, info) {
@@ -142,6 +150,7 @@ G.RunScene = class extends G.WorldScene {
       if ((b & B.FIRE) && L.cd <= 0 && !L.reloading && L.ammo > 0) {
         L.cd = w.rate; L.ammo--;
         this.fx.muzzle(gx, gy, aim, 0xffd34a, false);
+        this.localTracer(gx, gy, aim, w, 1);
         G.Sfx.play('rifle');
         this.fx.shake(w.shake * 0.7);
         if (v) v.recoil = Math.min(1, v.recoil + 0.45);
@@ -149,7 +158,7 @@ G.RunScene = class extends G.WorldScene {
         if (L.ammo <= 0) L.reloading = true;
       }
     } else if (w.arch === 'pistol') {
-      const shoot = () => { L.ammo--; this.fx.muzzle(gx, gy, aim, 0xfff3a0, false); G.Sfx.play('rifle'); this.fx.shake(0.1); if (v) v.recoil = 1; this.camRecoil = (this.camRecoil || 0) - 5; if (L.ammo <= 0) L.reloading = true; };
+      const shoot = () => { L.ammo--; this.fx.muzzle(gx, gy, aim, 0xfff3a0, false); this.localTracer(gx, gy, aim, w, 1); G.Sfx.play('rifle'); this.fx.shake(0.1); if (v) v.recoil = 1; this.camRecoil = (this.camRecoil || 0) - 5; if (L.ammo <= 0) L.reloading = true; };
       if ((pressed & B.FIRE) && L.cd <= 0 && !L.reloading && L.ammo > 0) { L.cd = w.rate; shoot(); }
       if ((pressed & B.ALT) && L.alt <= 0 && L.ammo > 0 && !L.reloading) { L.alt = w.altCd; shoot(); this.time.delayedCall(60, () => L.ammo > 0 && shoot()); this.time.delayedCall(120, () => L.ammo > 0 && shoot()); }
     } else if (w.arch === 'katana') {
@@ -168,6 +177,7 @@ G.RunScene = class extends G.WorldScene {
       if (trig && L.cd <= 0 && !L.reloading && L.ammo > 0) {
         L.cd = w.rate; L.ammo--;
         this.fx.muzzle(gx, gy, aim, w.pellets > 1 ? 0xff9a3a : 0xffd34a, w.kick >= 0.9);
+        this.localTracer(gx, gy, aim, w, w.pellets || 1, 0.3);
         G.Sfx.play(w.pellets > 1 ? 'cannon' : 'rifle');
         this.fx.shake(w.shake);
         if (v) v.recoil = Math.min(1, v.recoil + 0.3 + w.kick * 0.7);
@@ -195,7 +205,7 @@ G.RunScene = class extends G.WorldScene {
           this.fx.shake(w.shake); this.fx.kick(0.025);
         } else {
           L.cd = w.cannonRate;
-          this.fx.muzzle(gx, gy, aim, 0xff8a00, true);
+          this.fx.muzzle(gx, gy, aim, 0xff8a00, true); this.localTracer(gx, gy, aim, { speed: 1250, life: 0.45 }, 6, 0.32);
           G.Sfx.play('cannon');
           this.fx.shake(0.32); this.fx.kick(0.015);
         }
@@ -208,6 +218,8 @@ G.RunScene = class extends G.WorldScene {
     const me = G.Net.id;
     for (const e of evs) {
       switch (e[0]) {
+        case 'pulse': { this.fx.shake(0.45); if (G.UI) G.UI.flash = Math.min(0.5, G.UI.flash + 0.3); G.Sfx.play('heavy', 0.6); for (const c of (this.zoneViews && this.zoneViews.carne) || []) c.setScale(c.scale * 1.4); break; }
+        case 'tp': { const v = this.players.get(e[1]); if (v) this.fx.warp(v.x, v.y - 24); G.Sfx.play('spawn', 0.7); break; }
         case 'ping': { this.fx.rings.spawn(e[1], e[2], { life: 1.2, s0: 0.2, s1: 2.4, tint: 0xff3b4a }); this.fx.light(e[1], e[2], 0xff3b4a, 4, 1.2); G.Sfx.play('ui_ok'); break; }
         case 'rescue': { const v = this.players.get(e[1]); if (v) { this.fx.rings.spawn(v.x, v.y - 24, { life: 0.5, s0: 0.3, s1: 2, tint: 0x7dff4f }); this.fx.light(v.x, v.y - 24, 0x7dff4f, 5, 0.4); } break; }
         case 'b': this.spawnBullet(e); break;
@@ -314,6 +326,8 @@ G.RunScene = class extends G.WorldScene {
         }
         case 'orb': G.Sfx.play('alarm'); break;
         case 'warn': this.warns.push({ x: e[1], y: e[2], r: e[3], t: 0.9 }); break;
+        case 'pool': { const pl = this.add.image(e[1], e[2] - 6, 'glow').setScale(2.4, 0.5).setTint(0x60ff9a).setBlendMode(Phaser.BlendModes.ADD).setDepth(15).setAlpha(0.85);
+          this.tweens.add({ targets: pl, alpha: 0.35, scaleX: 2.7, duration: 500, yoyo: true, repeat: Math.max(1, Math.round(e[3] / 10)), onComplete: () => pl.destroy() }); break; }
         case 'supply': this.fx.green.explode(40, e[1], e[2]); this.fx.flashes.spawn(e[1], e[2], { life: 0.4, s0: 1, s1: 4, tint: 0x7dff4f }); G.Sfx.play('pickup'); break;
         case 'box': { const b = this.boxViews[e[1]]; if (b) { this.fx.gold.explode(20, b.x, b.y); b.setVisible(false); } G.Sfx.play('coins'); break; }
         case 'liftcall': G.Sfx.play('alarm'); break;
@@ -403,8 +417,22 @@ G.RunScene = class extends G.WorldScene {
   }
 
   // ------------------------------------------------------------ balas (pool)
+  // Trazador local: tu disparo se ve en el mismo fotograma (el servidor sigue siendo la autoridad del daño)
+  localTracer(x, y, aim, w, n, spread) {
+    const sp = w.speed || 1700;
+    for (let i = 0; i < (n || 1); i++) {
+      const a = aim + (n > 1 ? (Math.random() - 0.5) * spread : 0), s = sp * (n > 1 ? 0.85 + Math.random() * 0.3 : 1);
+      let img = this.bulletPool.pop();
+      if (!img) img = this.add.image(0, 0, 'bul').setDepth(45);
+      img.setTexture(n > 1 ? 'pellet' : 'bul').setVisible(true).setActive(true).setPosition(x, y).setRotation(a).setScale(1).setAlpha(1).setBlendMode(Phaser.BlendModes.ADD).setFlipX(false);
+      this.localBid = (this.localBid || 0) - 1;
+      this.bullets.set(this.localBid, { img, vx: Math.cos(a) * s, vy: Math.sin(a) * s, kind: n > 1 ? 4 : 0, life: w.life || 0.9 });
+    }
+  }
+
   spawnBullet(e) {
     const [, id, x, y, vx, vy, kind, team, owner, gl] = e;
+    if (owner === G.Net.id && !team && (kind === 0 || kind === 4)) return;   // ya dibujado por el trazador local
     if (kind === 2) G.Sfx.play('dash', this.volAt(x, y) * 0.7);
     if (!team && owner && owner !== G.Net.id && (kind === 0 || kind === 4)) { const pv = this.players.get(owner); if (pv) pv.recoil = Math.min(1, pv.recoil + 0.5); }
     if (G.Gfx.lights && kind !== 2) this.fx.light(x, y, team ? 0xff3030 : 0xffd34a, kind === 3 ? 4 : 2, 0.06);
@@ -476,7 +504,7 @@ G.RunScene = class extends G.WorldScene {
         if (this.pendingWarp && this.pendingWarp.has(id)) { this.fx.warp(t[2], t[3] - 20); this.pendingWarp.delete(id); }
       }
       v.setState(ta[2] + (t[2] - ta[2]) * al, ta[3] + (t[3] - ta[3]) * al, t[4], t[5], t[6], t[7]);
-      if (v.ti === 4 && b.o && b.o.bk) v.setKind(LV.Campaign.bosses[b.o.bk].tint);
+      if (v.ti === 4 && b.o && b.o.bk) v.setKind(b.o.bk);
       // Culling: fuera de cámara no se anima ni se dibuja (los jefes siempre, por sus rayos)
       const boss = v.ti === 4 || v.ti === 7;
       const inView = boss || (v.x > view.x - 160 && v.x < view.right + 160 && v.y > view.y - 200 && v.y < view.bottom + 260);
@@ -592,6 +620,9 @@ G.RunScene = class extends G.WorldScene {
     const flags = this.me.flags;
     if (flags & 24) { G.UI.setPrompt(null); return; }
     let text = null;
+    // Conducto del subdescenso secreto
+    const pv = this.zoneViews && this.zoneViews.pad;
+    if (pv) { pv.setVisible(!!(snap.o && snap.o.pr)); if (pv.visible && Math.abs(pos.x - pv.x) < 60 && Math.abs(pos.y - pv.y) < 50) text = 'CONDUCTO DE SERVICIO · quédate encima para bajar a la antesala del jefe'; }
     // Sigilo: enemigo común de espaldas a menos de 60 px → ejecución con [V]
     for (const ev of this.enemyViews.values()) {
       if (ev.ti === 4 || ev.ti === 7 || ev.ti === 6) continue;

@@ -91,7 +91,8 @@
     const maxBranches = 2 + Math.floor(n / 3);
     let branches = 0;
     for (let i = 1; i < path.length - 1 && branches < maxBranches; i++) {
-      if (!rng.chance(0.3 + n * 0.03)) continue;
+      const forceSecret = opts && opts.extract === false && branches === 0 && i >= path.length - 3;   // los jefes siempre tienen subdescenso secreto
+      if (!rng.chance(0.3 + n * 0.03) && !forceSecret) continue;
       const p = path[i];
       const dirs = rng.shuffle([[0, -1], [0, 1], [-1, 0]]);
       for (const [dx, dy] of dirs) {
@@ -375,7 +376,45 @@
       pathLen: path.length,
       spawn: { x: start.x + (RW / 2) * TS - C.PW / 2, y: start.floorTop - C.PH }
     };
+    applyZone(level, opts || {}, rng);
     return level;
+  }
+
+  // Zonas con identidad propia (deterministas: servidor y cliente generan exactamente lo mismo)
+  function applyZone(L, o, rng) {
+    L.zone = o.zone || null;
+    L.props = [];
+    const A = L.arena, fl = A.floorTop;
+    const prop = (kind, x, y, extra) => L.props.push(Object.assign({ kind, x: Math.round(x), y: Math.round(y) }, extra || {}));
+    const combat = L.rooms.filter(r => r.type === 'combat');
+    switch (L.zone) {
+      case 'capataz':   // prensas hidráulicas en la sala del jefe
+        for (const f of [0.3, 0.7]) L.traps.push({ id: L.traps.length, x: A.x + A.w * f - 48, y: fl - 10, w: 96, h: 10, period: 4, on: 1, offset: f * 4, roomId: A.id, press: true });
+        for (const f of [0.3, 0.7]) prop('prensa', A.x + A.w * f, fl);
+        break;
+      case 'cuarentena': // tanques de cultivo, luces de contención y charcos tóxicos
+        for (const r of combat) { prop('tanque', r.x + r.w * 0.25, r.floorTop); prop('tanque', r.x + r.w * 0.75, r.floorTop); prop('sirena', r.x + r.w / 2, r.y + 50); }
+        break;
+      case 'gemelas':   // dos incubadoras funcionales en el andén: generan crías hasta destruirlas
+        for (const f of [0.22, 0.78]) L.covers.push({ id: L.covers.length, kind: 'incubadora', x: Math.round(A.x + A.w * f - 28), y: fl - 64, w: 56, h: 64, maxHp: 900, roomId: A.id, pod: true });
+        break;
+      case 'quimera':   // cubetas de ácido alrededor de la quimera
+        for (const f of [0.18, 0.82]) L.traps.push({ id: L.traps.length, x: A.x + A.w * f - 64, y: fl - 10, w: 128, h: 10, period: 5, on: 2, offset: f * 5, roomId: A.id, acid: true });
+        for (const r of combat) prop('tanque', r.x + r.w / 2, r.floorTop, { roto: true });
+        break;
+      case 'garganta':  // tejido que late: paredes con pulso y espasmos
+        for (const r of L.rooms) for (let i = 0; i < 3; i++) prop('carne', r.x + rng.range(40, r.w - 40), r.y + rng.range(30, r.h - 60), { s: rng.range(0.8, 1.6) });
+        break;
+      case 'venas':     // bosque de venas colgantes
+        for (const r of L.rooms) for (let i = 0; i < 5; i++) prop('vena', r.x + rng.range(20, r.w - 20), r.y + 34, { len: rng.range(80, 260) });
+        break;
+    }
+    // Subdescenso secreto antes de un jefe: sala oculta de preparación con conducto a la antesala
+    L.prep = null;
+    if (o.extract === false) {
+      const sec = L.rooms.find(r => r.type === 'secret');
+      if (sec) L.prep = { roomId: sec.id, x: sec.x + sec.w / 2, y: sec.floorTop, to: { x: A.x + 90, y: fl - C.PH } };
+    }
   }
 
   function roomIdAt(L, x, y) {

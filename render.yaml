@@ -1,0 +1,18 @@
+# Despliegue en Render (Blueprint). Las cuentas se guardan en el disco persistente /var/data.
+services:
+  - type: web
+    name: leviathan
+    runtime: node
+    plan: starter
+    buildCommand: npm ci --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /
+    envVars:
+      - key: LEVIATHAN_DATA
+        value: /var/data
+      - key: LEVIATHAN_ADMIN_PASS
+        sync: false
+    disk:
+      name: leviathan-data
+      mountPath: /var/data
+      sizeGB: 1

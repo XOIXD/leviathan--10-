@@ -39,11 +39,13 @@ function create(id, type, x, y, roomId, hpMul, kind) {
   if (type === 'warden') {
     e.phase = 1; e.stunT = 0; e.laserT = 0; e.laserCharge = 0; e.laserAng = 0; e.laserDir = 1;
     e.summonCd = 8; e.airborne = false; e.chargeDir = 1; e.atkT = 2.5;
+    e.pending = []; e.pools = []; e.burrowT = 0; e.invuln = false;
   }
   if (cfg) { e.kind = kind; e.cfg = cfg; }
   if (type === 'heart') {
     e.phase = 1; e.stunT = 0; e.laserT = 0; e.laserCharge = 0; e.laserAng = 0; e.laserDir = 1; e.summonCd = 10;
-    e.atkT = 3; e.ringT = 2; e.ringRot = 0; e.homeY = e.y; e.pending = []; e.floorY = y + 70;
+    e.atkT = 3; e.ringT = 2; e.ringRot = 0; e.homeY = e.y; e.pending = []; e.pools = []; e.floorY = y + 70;
+    e.spin = 0; e.spinT = 0; e.cyc = 0; e.cycT = 4.5; e.burstT = 0; e.transT = 0; e.invuln = false;
   }
   if (type === 'turret') { e.aimA = Math.PI; e.atkT = 1.5; }
   if (type === 'alpha') { e.airT = 0; e.airborne = false; e.chargeDir = 1; }
@@ -267,6 +269,47 @@ function segHitsBox(x0, y0, x1, y1, b) {
   return true;
 }
 
+// ------------------------------------------------------------ peligros de jefe (explosiones avisadas, charcos, eclosiones)
+function tickHazards(e, dt, ctx) {
+  const dm = ctx.dds.dmgMul;
+  for (let i = e.pending.length - 1; i >= 0; i--) {
+    const pd = e.pending[i];
+    pd.t -= dt;
+    if (pd.t > 0) continue;
+    e.pending.splice(i, 1);
+    if (pd.k === 'hatch') { ctx.spawnEnemy('berserker', pd.x, pd.y, e.roomId); ctx.emit(['sp', 0]); }
+    else if (pd.k === 'sting') ctx.enemyBullet(pd.x, pd.y, Math.PI / 2, 720, 12 * dm, 0, e);
+    else if (pd.k === 'shock') { for (const d of [-1, 1]) ctx.enemyBullet(pd.x + d * 40, pd.y - 22, d > 0 ? 0 : Math.PI, 520, 16 * dm, 1, e); }
+    else if (pd.k === 'acid') { e.pools.push({ x: pd.x, y: pd.y, t: 4.5 }); ctx.emit(['pool', Math.round(pd.x), Math.round(pd.y), 45]); }
+    else if (pd.k === 'rivet' && pd.a !== undefined) { for (let k = 0; k < 7; k++) ctx.enemyBullet(pd.x, pd.y, pd.a + (k - 3) * 0.09, 640, 9 * dm, 0, e); }
+    else ctx.explode(pd.x, pd.y - 20, pd.r || 90, (pd.dmg || 24) * dm, 'enemy', null);
+  }
+  for (let i = e.pools.length - 1; i >= 0; i--) {
+    const pl = e.pools[i];
+    pl.t -= dt;
+    if (pl.t <= 0) { e.pools.splice(i, 1); continue; }
+    for (const p of ctx.alivePlayers) if (Math.abs(cx(p.b) - pl.x) < 62 && Math.abs(p.b.y + p.b.h - pl.y) < 30) ctx.hurtPlayer(p, 22 * dm * dt, pl.x, pl.y, true);
+  }
+}
+const warnAt = (e, ctx, x, y, t, extra) => { e.pending.push(Object.assign({ x, y, t }, extra || {})); ctx.emit(['warn', Math.round(x), Math.round(y), (extra && extra.r) || 90]); };
+
+// Ataques exclusivos de cada jefe (devuelven true si se ejecutaron)
+const BOSS_ATK = {
+  // Capataz: martillos hidráulicos que avanzan hacia el objetivo
+  prensa(e, T, ctx, ph) { const dir = sgn(cx(T.b) - cx(e)), fy = e.y + e.h; for (let i = 0; i < 3 + ph; i++) warnAt(e, ctx, cx(e) + dir * (110 + i * 105), fy, 0.55 + i * 0.28, { r: 80, dmg: 26 }); ctx.emit(['msg', 'PRENSAS HIDRÁULICAS EN LÍNEA', 0xffb020]); },
+  martillo(e, T, ctx, ph) { const fy = e.y + e.h; for (const d of [-1, 1]) for (let i = 0; i < 6; i++) warnAt(e, ctx, cx(e) + d * (100 + i * 95), fy, 0.45 + i * 0.2, { r: 75, dmg: 24 }); BOSS_ATK.onda(e, T, ctx, ph); },
+  onda(e, T, ctx) { const fy = e.y + e.h; for (let i = 0; i < 3; i++) e.pending.push({ x: cx(e), y: fy, t: 0.3 + i * 0.45, k: 'shock' }); ctx.emit(['tele', e.id]); },
+  remaches(e, T, ctx) { const a = Math.atan2(cy(T.b) - (e.y + 34), cx(T.b) - cx(e)); for (let k = 0; k < 9; k++) ctx.enemyBullet(cx(e), e.y + 34, a + (k - 4) * 0.07, 640, 9 * ctx.dds.dmgMul, 0, e); e.pending.push({ x: cx(e), y: e.y + 34, t: 0.4, k: 'rivet', a }); },
+  // Quimera: ácido persistente, saltos depredadores y tres cabezas
+  acido(e, T, ctx, ph) { const fy = T.b.y + T.b.h; for (let i = 0; i < 2 + ph; i++) warnAt(e, ctx, cx(T.b) + (i - (1 + ph) / 2) * 95, fy, 0.8 + i * 0.12, { k: 'acid', r: 60 }); ctx.emit(['msg', 'LA QUIMERA ESCUPE ÁCIDO', 0x60ffd8]); },
+  salto(e, T, ctx) { e.state = 'slam'; e.airborne = false; e.leapPool = true; },
+  cabezas(e, T, ctx, ph) { for (const [dy, sp] of [[8, 520], [40, 600], [72, 480]]) { const a = Math.atan2(cy(T.b) - (e.y + dy), cx(T.b) - cx(e)); for (let k = 0; k < 3 + ph; k++) ctx.enemyBullet(cx(e), e.y + dy, a + (k - (2 + ph) / 2) * 0.12, sp, 10 * ctx.dds.dmgMul, 0, e); } ctx.emit(['tele', e.id]); },
+  // Matriarca: aguijones desde el techo, excavación y nidos
+  aguijones(e, T, ctx, ph) { for (const p of ctx.alivePlayers) { const top = p.b.y - Phys.rayLength(ctx.L, cx(p.b), p.b.y, -Math.PI / 2, 700) + 12; for (let i = 0; i < 3 + ph; i++) warnAt(e, ctx, cx(p.b) + (i - (2 + ph) / 2) * 70, top, 0.6 + i * 0.15, { k: 'sting', r: 30 }); } ctx.emit(['msg', 'LLUVIA DE AGUIJONES', 0xff80e0]); },
+  excavar(e) { e.state = 'burrow'; e.burrowT = 2.2; e.invuln = true; },
+  huevos(e, T, ctx, ph) { const fy = e.y + e.h; for (let i = 0; i < 1 + ph; i++) warnAt(e, ctx, cx(e) + (Math.random() - 0.5) * 700, fy, 3, { k: 'hatch', r: 40 }); ctx.emit(['msg', 'LA MATRIARCA DEPOSITA NIDOS · DESTRÚYELOS O ECLOSIONARÁN', 0xff80e0]); }
+};
+
 function warden(e, dt, ctx) {
   const L = ctx.L, ag = ctx.dds.aggro;
   const ratio = e.hp / e.maxHp;
@@ -282,6 +325,21 @@ function warden(e, dt, ctx) {
   if (e.think <= 0) { e.think = 0.4; const T = ctx.findTarget(e, 2000, false); e.target = T ? T.id : 0; }
   const T = e.target ? ctx.player(e.target) : null;
   let tele = false, charging = false;
+  tickHazards(e, dt, ctx);
+  // Matriarca bajo tierra: invulnerable, avanza hacia su presa y emerge con una erupción
+  if (e.state === 'burrow') {
+    e.burrowT -= dt;
+    if (T) e.vx = approach(e.vx, sgn(cx(T.b) - cx(e)) * 520, 2400 * dt);
+    Phys.stepGroundBody(L, e, dt);
+    if (e.burrowT <= 0) {
+      e.state = 'idle'; e.invuln = false;
+      ctx.explode(cx(e), e.y + e.h - 10, 150, 30 * ctx.dds.dmgMul, 'enemy', null);
+      for (let k = 0; k < 7; k++) ctx.enemyBullet(cx(e), e.y + e.h - 20, -Math.PI / 2 + (k - 3) * 0.28, 560, 12 * ctx.dds.dmgMul, 0, e);
+      ctx.emit(['shake', 0.6]);
+    }
+    e.flags = (e.facing > 0 ? F.RIGHT : 0) | 512;
+    return;
+  }
 
   if (e.stunT > 0) {
     e.stunT -= dt; e.vx = approach(e.vx, 0, 1500 * dt); e.laserT = 0; e.laserCharge = 0;
@@ -305,6 +363,7 @@ function warden(e, dt, ctx) {
     if (e.airborne && e.onGround) {
       e.airborne = false; e.state = 'idle';
       ctx.explode(cx(e), e.y + e.h - 10, 190, 28 * ctx.dds.dmgMul, 'enemy', null);
+      if (e.leapPool) { e.leapPool = false; e.pools.push({ x: cx(e), y: e.y + e.h, t: 4.5 }); ctx.emit(['pool', Math.round(cx(e)), Math.round(e.y + e.h), 45]); }
       for (const d of [-1, 1]) ctx.enemyBullet(cx(e) + d * 70, e.y + e.h - 22, d > 0 ? 0 : Math.PI, 480, 20 * ctx.dds.dmgMul, 1, e);
     } else if (e.onGround && !e.airborne) {
       e.airborne = true; e.vy = -980;
@@ -330,7 +389,8 @@ function warden(e, dt, ctx) {
         if (e.summonCd > 0) opts = opts.filter(o => o !== 'summon');
         if (!opts.length) opts = ['volley'];
         const a = opts[Math.floor(Math.random() * opts.length)];
-        if (a === 'volley') {
+        if (BOSS_ATK[a]) BOSS_ATK[a](e, T, ctx, ph);
+        else if (a === 'volley') {
           const count = ph === 3 ? 11 : 7;
           const base = Math.atan2(cy(T.b) - (e.y + 30), cx(T.b) - cx(e));
           for (let i = 0; i < count; i++) ctx.enemyBullet(cx(e), e.y + 30, base + (i - (count - 1) / 2) * 0.13, 560, 11 * ctx.dds.dmgMul, 0, e);
@@ -430,16 +490,13 @@ function heart(e, dt, ctx) {
   if (ph !== e.phase) {
     e.phase = ph;
     ctx.emit(['boss', e.id, ph]);
-    ctx.emit(['msg', ph === 2 ? 'EL CORAZÓN BOMBEA FLUJO PURO · FASE 2' : 'ARRITMIA TOTAL · FASE 3', ph === 2 ? 0xffb020 : 0xff3b3b]);
+    ctx.emit(['msg', ph === 2 ? 'FASE 2 · BOMBEO ARTERIAL: espirales y arterias de Flujo' : 'FASE 3 · ARRITMIA: patrones alternos; castígalo cuando quede expuesto', ph === 2 ? 0xffb020 : 0xff3b3b]);
     ctx.partBreak(e, ph);
+    if (ph > 1) { e.transT = 2; e.invuln = true; e.laserT = 0; e.laserCharge = 0; e.cycT = 4.5; e.cyc = 0; for (let i = 0; i < 12; i++) ctx.enemyBullet(cx(e), cy(e), i * Math.PI / 6, 200, 8 * ctx.dds.dmgMul, 0, e); }
   }
   e.bob += dt; e.contactCd -= dt; e.summonCd -= dt;
   e.y = e.homeY + Math.sin(e.bob * 1.3) * 14;
-  for (let i = e.pending.length - 1; i >= 0; i--) {
-    const pd = e.pending[i];
-    pd.t -= dt;
-    if (pd.t <= 0) { ctx.explode(pd.x, pd.y - 20, 95, 26 * ctx.dds.dmgMul, 'enemy', null); e.pending.splice(i, 1); }
-  }
+  tickHazards(e, dt, ctx);
   if (e.stunT > 0) { e.stunT -= dt; e.laserT = 0; e.laserCharge = 0; e.flags = F.STUN; return; }
   e.think -= dt;
   if (e.think <= 0) { e.think = 0.4; const T = ctx.findTarget(e, 3000, false); e.target = T ? T.id : 0; }
@@ -455,25 +512,26 @@ function heart(e, dt, ctx) {
     e.laserLen = len;
     const ex = ox + Math.cos(e.laserAng) * len, ey = oy + Math.sin(e.laserAng) * len;
     for (const p of ctx.alivePlayers) if (segHitsBox(ox, oy, ex, ey, p.b)) ctx.hurtPlayer(p, 40 * ctx.dds.dmgMul * dt, ox, oy, true);
-  } else {
+  } else if (e.transT > 0) {
+    // Transición de fase: invulnerable 2 s, onda de choque legible (pocas balas y lentas)
+    e.transT -= dt;
+    if (e.transT <= 0) e.invuln = false;
+  } else if (ph === 1) {
+    // FASE 1 · LATIDO: anillos lentos con un hueco que gira (siempre hay salida) + golpes avisados
     e.ringT -= dt; e.atkT -= dt;
     if (e.ringT <= 0) {
-      e.ringT = [0, 2.8, 2.2, 1.7][ph] / ag;
-      const n = [0, 14, 18, 24][ph];
-      e.ringRot += 0.21;
-      for (let i = 0; i < n; i++) ctx.enemyBullet(ox, oy, e.ringRot + i * Math.PI * 2 / n, 300 + 40 * ph, 10 * ctx.dds.dmgMul, 0, e);
+      e.ringT = 2.6 / ag; e.ringRot += 0.5;
+      const n = 18;
+      for (let i = 0; i < n; i++) { if (i % n < 3) continue; ctx.enemyBullet(ox, oy, e.ringRot + i * Math.PI * 2 / n, 260, 10 * ctx.dds.dmgMul, 0, e); }
     }
+    if (T && e.atkT <= 0) { e.atkT = 3.2 / ag; for (const p of ctx.alivePlayers) warnAt(e, ctx, cx(p.b), p.b.y + p.b.h, 0.95, { r: 90, dmg: 26 }); }
+  } else if (ph === 2) {
+    // FASE 2 · BOMBEO ARTERIAL: espiral doble continua + barridos de arteria + crías
+    e.spinT -= dt; e.atkT -= dt;
+    if (e.spinT <= 0) { e.spinT = 0.13 / ag; e.spin += 0.24; for (const o of [0, Math.PI]) ctx.enemyBullet(ox, oy, e.spin + o, 250, 10 * ctx.dds.dmgMul, 0, e); }
     if (T && e.atkT <= 0) {
-      e.atkT = [0, 3.2, 2.6, 2.1][ph] / ag;
-      const opts = ph === 1 ? ['slam'] : ph === 2 ? ['slam', 'summon', 'laser'] : ['slam', 'summon', 'laser', 'laser'];
-      const a = opts[Math.floor(Math.random() * opts.length)];
-      if (a === 'slam' || (a === 'summon' && e.summonCd > 0)) {
-        for (const p of ctx.alivePlayers) {
-          const px = cx(p.b), py = p.b.y + p.b.h;
-          e.pending.push({ x: px, y: py, t: 0.9 });
-          ctx.emit(['warn', Math.round(px), Math.round(py), 90]);
-        }
-      } else if (a === 'summon') {
+      e.atkT = 4 / ag;
+      if (e.summonCd <= 0 && Math.random() < 0.45) {
         e.summonCd = 12;
         const k = 2 + Math.floor(ctx.alivePlayers.length / 2);
         for (let i = 0; i < k; i++) ctx.spawnEnemy(i % 3 === 2 ? 'berserker' : 'drone', ox + (i - k / 2) * 70, i % 3 === 2 ? e.floorY : oy, e.roomId);
@@ -481,9 +539,29 @@ function heart(e, dt, ctx) {
       } else {
         e.laserDir = Math.random() < 0.5 ? -1 : 1;
         e.laserAng = Math.atan2(cy(T.b) - oy, cx(T.b) - ox) - 0.9 * e.laserDir;
-        e.laserCharge = 1.0;
+        e.laserCharge = 1.1;
         ctx.emit(['msg', '¡ARTERIA DE FLUJO CARGANDO!', 0xff3b3b]);
       }
+    }
+  } else {
+    // FASE 3 · ARRITMIA: ciclos de patrones distintos; tras cada ciclo el Corazón queda EXPUESTO (ventana de castigo)
+    e.cycT -= dt; e.burstT -= dt;
+    const A = ctx.L.arena;
+    if (e.cyc === 0 && e.burstT <= 0) {            // ráfagas dirigidas a cada operador
+      e.burstT = 0.55 / ag;
+      for (const p of ctx.alivePlayers) { const a = Math.atan2(cy(p.b) - oy, cx(p.b) - ox); for (let k = -1; k <= 1; k++) ctx.enemyBullet(ox, oy, a + k * 0.1, 430, 10 * ctx.dds.dmgMul, 0, e); }
+    } else if (e.cyc === 1 && e.burstT <= 0) {     // tablero de impactos con carriles seguros alternos
+      e.burstT = 1.5;
+      e.par = !e.par;
+      for (let x = A.x + 80 + (e.par ? 0 : 120); x < A.x + A.w - 60; x += 240) warnAt(e, ctx, x, A.floorTop, 1.1, { r: 95, dmg: 26 });
+    } else if (e.cyc === 2) {                      // espiral inversa + barrido
+      e.spinT -= dt;
+      if (e.spinT <= 0) { e.spinT = 0.16 / ag; e.spin -= 0.3; for (const o of [0, Math.PI * 2 / 3, Math.PI * 4 / 3]) ctx.enemyBullet(ox, oy, e.spin + o, 230, 10 * ctx.dds.dmgMul, 0, e); }
+      if (T && e.laserT <= 0 && e.laserCharge <= 0 && e.cycT > 3.2) { e.laserDir = e.par ? 1 : -1; e.laserAng = Math.atan2(cy(T.b) - oy, cx(T.b) - ox) - 0.8 * e.laserDir; e.laserCharge = 0.9; }
+    }
+    if (e.cycT <= 0) {
+      e.cyc = (e.cyc + 1) % 3; e.cycT = 4.5;
+      if (e.cyc === 0) { e.stunT = 1.8; ctx.emit(['msg', '¡EL CORAZÓN QUEDA EXPUESTO! ¡AHORA!', 0x7dff4f]); }
     }
   }
   if (e.contactCd <= 0) { const p = overlapPlayer(e, ctx); if (p) { ctx.hurtPlayer(p, 22 * ctx.dds.dmgMul, ox, oy); e.contactCd = 0.5; } }

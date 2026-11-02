@@ -1,6 +1,6 @@
 /* LEVIATHAN - Sala autoritativa (Refugio + Misión). El servidor es la única fuente de verdad:
    simula jugadores (con los inputs recibidos), enemigos, balas, coberturas, objetivos cooperativos,
-   escalado dinámico de dificultad (DDS) y derrota compartida. Envía snapshots por lotes a 20 Hz. */
+   escalado dinámico de dificultad (DDS) y derrota compartida. Envía snapshots por lotes a 20 Hz (30 Hz en salas pequeñas). */
 const C = require('../shared/constants');
 const Phys = require('../shared/physics');
 const LevelGen = require('../shared/levelgen');
@@ -51,6 +51,7 @@ class Room {
     this.isPublic = false;
     this.pvp = false;
     this.errors = 0;
+    this.snapEvery = C.SNAP_EVERY;   // 20 Hz por defecto; las salas no-BR suben a 30 Hz (ver abajo)
   }
 
   // ---------------------------------------------------------------- reglas de acceso y reconexión
@@ -268,13 +269,14 @@ class Room {
     p.b.speedMul = (1 + gspd + (ps.speed || 0)) * (p.weapon.move || 1);
     if ((cnt.corazon || 0) >= 2) p.stims++;
     if ((cnt.escolta || 0) >= 2) p.grenades++;
-    p.heartUsed = false; p.gType = 0;
+    p.heartUsed = false; p.gType = 0; p.guard = false; p.meleeStun = 0;
     p.ws.perfT = 0; p.ws.meleeCd = 0; p.ws.reloadTotal = 1; p.ws.fumbled = false;
   }
 
-  onInput(socket, frames, ack) {
+  onInput(socket, frames, ack, rtt) {
     const p = this.players.get(socket.id);
     if (!p || !Array.isArray(frames) || frames.length > 60) return;
+    if (isFinite(rtt)) p.rtt = Math.max(0, Math.min(300, +rtt));
     if (Number.isInteger(ack) && ack > p.ackSeq && ack <= p.snapSeq) p.ackSeq = ack;
     for (const f of frames) {
       if (!Array.isArray(f) || f.length < 3) continue;
@@ -283,6 +285,19 @@ class Room {
       p.inputs.push(seq, b, aim / 1000);
     }
     if (p.inputs.length > 40 * 3) p.inputs.splice(0, p.inputs.length - 40 * 3);
+  }
+
+  // ---------------------------------------------------------------- chat de voz (relé, sin procesar audio)
+  onVoice(socket, buf) {
+    const p = this.players.get(socket.id);
+    if (!p || p.ghost || !buf || !(buf.byteLength > 0) || buf.byteLength > 1500) return;
+    const now = Date.now();
+    if (now - (p.vcWin || 0) > 1000) { p.vcWin = now; p.vcN = 0; }
+    if (++p.vcN > 16) return;                            // ~12 paquetes/s legítimos; el resto se descarta
+    for (const q of this.players.values()) {
+      if (q === p || q.ghost || (this.pvp && !this.sameTeam(p, q))) continue;
+      q.socket.volatile.emit('vc', p.id, buf);
+    }
   }
 
   // ---------------------------------------------------------------- acciones del refugio
@@ -345,7 +360,7 @@ class Room {
     // Herramienta de depuración (sólo con LEVIATHAN_DEV=1; jamás activa en producción)
     if (a.type === 'dev' && (process.env.LEVIATHAN_DEV === '1' || prof.admin)) {
       const R = this.run;
-      if (a.cmd === 'weapon' && ['katana', 'rifle', 'axe', 'pistol', 'smg', 'shotgun', 'sniper', 'lmg', 'dagas', 'cetro'].includes(a.id)) prof.contract = a.id;
+      if (a.cmd === 'weapon' && !!Catalog.archetypes[a.id]) prof.contract = a.id;
       else if (a.cmd === 'descent' && this.phase === 'hub') { prof.story[this.variant()] = 99; this.sel[this.variant()] = a.idx | 0; this.fixSel(); }
       else if (a.cmd === 'arena' && R) { const A = R.L.arena; p.b.x = A.x + 200; p.b.y = A.floorTop - p.b.h - 2; p.b.vx = p.b.vy = 0; }
       else if (a.cmd === 'gate' && R && R.gates[0]) { const t = R.gates[0].terminals[0]; p.b.x = t.x - 300; p.b.y = t.y - p.b.h - 2; p.b.vx = p.b.vy = 0; }
@@ -403,7 +418,7 @@ class Room {
       }
       case 'equipWSkin':
         if (!prof.wskinOwned.includes(a.id)) res.msg = 'No posees ese acabado.';
-        else if (!['katana', 'rifle', 'axe', 'pistol', 'smg', 'shotgun', 'sniper', 'lmg', 'dagas', 'cetro'].includes(a.arch)) res.msg = 'Arma inválida.';
+        else if (!!!Catalog.archetypes[a.arch]) res.msg = 'Arma inválida.';
         else if (findWSkin(a.id) && findWSkin(a.id).arch && findWSkin(a.id).arch !== a.arch) res.msg = 'Ese camuflaje está diseñado para otra arma.';
         else { prof.wskins[a.arch] = a.id; res = { ok: true, msg: 'Acabado aplicado.' }; }
         break;
@@ -455,7 +470,7 @@ class Room {
       case 'contract':
         if (!Catalog.archetypes[a.id] || (a.id === 'cetro' && !(prof.arms || []).includes('cetro'))) res.msg = 'Contrato inválido.';
         else if (prof.contract === a.id) res.msg = 'Ese contrato ya está activo.';
-        else if (!pay(Catalog.arms[a.id] ? 600 : 300)) res.msg = 'Biomasa insuficiente.';
+        else if (!pay(Catalog.contractPrice(a.id))) res.msg = 'Biomasa insuficiente.';
         else { prof.contract = a.id; res = { ok: true, msg: `Contrato firmado: ${Catalog.archetypes[a.id]} en tu próximo descenso.` }; }
         break;
       case 'rarity':
@@ -524,12 +539,29 @@ class Room {
     if (this.tick % 30 === 0) this.expireGhosts();
     if (this.phase === 'hub') this.updateHub(dt);
     else this.updateRun(dt);
-    if (this.tick % C.SNAP_EVERY === 0) this.flush();
+    if (this.tick % this.snapEvery === 0) this.flush();
+    else if (this.events.length && this.snapEvery < 3) this.flushEvents();   // BR (100 jugadores) conserva el envío por lotes
+  }
+
+  // Envío inmediato de eventos entre snapshots (≤16 ms en vez de ≤50 ms): mismo filtro de interés
+  flushEvents() {
+    const evs = this.events;
+    this.events = [];
+    const R = this.phase === 'run' ? this.run : null;
+    const IR = C.INTEREST_R * (R && R.uavT > 0 ? 2 : 1);
+    for (const p of this.players.values()) {
+      if (p.ghost) continue;
+      const all = !R || (p.state !== 'alive' && !this.pvp);
+      const mine = [];
+      for (const ev of evs) if (all || ev.x === undefined || (Math.abs(ev.x - p.b.x) < IR && Math.abs(ev.y - p.b.y) < IR)) mine.push(ev.d);
+      this.sendEvents(p, mine);
+    }
   }
 
   consumeInputs(p, L, fn) {
     const q = p.inputs;
-    const frames = q.length > 18 ? 3 : (q.length > 0 ? 1 : 0);
+    const n = q.length / 3;
+    const frames = n > 5 ? 3 : n > 2 ? 2 : n > 0 ? 1 : 0;   // recupera atraso: la cola se mantiene en ≤2 fotogramas
     for (let i = 0; i < frames && q.length; i++) {
       const seq = q.shift(), b = q.shift(), aim = q.shift();
       p.lastSeq = seq; p.aim = aim;
@@ -811,6 +843,13 @@ class Room {
         break;
       }
       case 'secret': {
+        // Subdescenso secreto previo al jefe: armería oculta + conducto a la antesala
+        if (L.prep && L.prep.roomId === room.id && !R.prepOn) {
+          R.prepOn = true;
+          for (const q of this.players.values()) if (q.state === 'alive') { q.hp = q.maxHp; q.grenades = 5; q.stims++; if (q.ws && q.weapon.mag) q.ws.ammo = q.weapon.mag; }
+          this.msg('SUBDESCENSO SECRETO · ARMERÍA OCULTA: vida, munición, granadas y +1 estimulante. Un conducto lleva a la antesala del jefe.', 0x7dff4f);
+          break;
+        }
         this.spawnWave(room, R.rng.int(0, 2));
         if (!R.royal && R.D.layer >= 2 && !this.pvp) {
           R.royal = true;
@@ -986,7 +1025,7 @@ class Room {
 
     this.updateBullets(dt);
     this.updateObjectives(dt, ctx);
-    if (!this.pvp) { this.updateAnomaly(dt, ctx); this.updateEvac(dt); }
+    if (!this.pvp) { this.updateAnomaly(dt, ctx); this.updateEvac(dt); this.updateZone(dt, ctx); }
     this.updateSupport(dt, ctx);
     this.updateDynamic(dt, ctx);
     this.updateExtract(dt, ctx);
@@ -1214,6 +1253,7 @@ class Room {
     const R = this.run;
     if (p.state !== 'alive' || R.ended) return;
     if (p.b.dashT > 0 || (p.rescueT || 0) > R.t || (p.profile.admin && p.profile.god)) return;   // admin inmortal
+    if (p.guard) dmg *= 0.25;   // escudo de la Lanza Bastión
     if (!continuous && p.hurtT > 0) return;
     dmg *= (p.armor || 1) * (R.shieldT > 0 ? 0.5 : 1);
     const wall = p.setB && (p.setB.ferroso || 0) >= 3 && p.b.crouch;
@@ -1338,39 +1378,54 @@ class Room {
         wb.passCover = !!w.waveCover;
       }
     } else if (w.gun) {
-      // Arma de fuego parametrizada (subfusil, escopeta, francotirador, M42)
+      // Arma de fuego parametrizada: automática, semiautomática, ráfaga, perdigones, cohetes, virotes aturdidores
       p.ads = !!w.ads && (b & B.ALT) !== 0;
       if ((pressed & B.RELOAD) && s.ammo < w.mag && s.reloadT <= 0) this.startReload(p);
+      const fire = () => {
+        const multi = w.pellets > 1;
+        const spread = (w.spread + s.bloom) * (body.crouch ? 0.6 : 1) * (p.ads ? 0.15 : 1) * (multi ? 2 : 1);
+        for (let i = 0; i < w.pellets; i++) {
+          const a = aim + (Math.random() - 0.5) * spread, sp = w.speed * (multi ? 0.85 + Math.random() * 0.3 : 1);
+          const bl = this.spawnBullet(ox, oy, Math.cos(a) * sp, Math.sin(a) * sp, 0, p.id, w.dmg * dmgMul * (p.ads ? 1.2 : 1), multi ? 4 : 0, w.life || 0.9, w.pierce, w.coverMul);
+          bl.boom = w.rocket || 0; bl.stun = w.stun || 0;
+        }
+        s.ammo--; s.lastShot = R.t;
+        s.bloom = Math.min(w.bloomMax, s.bloom + w.bloomAdd);
+        if (w.selfKnock) body.vx -= Math.cos(aim) * w.selfKnock;
+        if (s.ammo <= 0) this.startReload(p);
+      };
+      if (s.burst > 0) { s.burstT -= dt; if (s.burstT <= 0) { if (s.ammo > 0 && s.reloadT <= 0) fire(); s.burst--; s.burstT = 0.07; } }
       const trig = w.auto ? (b & B.FIRE) : (pressed & B.FIRE);
-      if (trig && s.cd <= 0 && s.reloadT <= 0) {
-        if (s.ammo > 0) {
-          const multi = w.pellets > 1;
-          const spread = (w.spread + s.bloom) * (body.crouch ? 0.6 : 1) * (p.ads ? 0.15 : 1) * (multi ? 2 : 1);
-          for (let i = 0; i < w.pellets; i++) {
-            const a = aim + (Math.random() - 0.5) * spread, sp = w.speed * (multi ? 0.85 + Math.random() * 0.3 : 1);
-            this.spawnBullet(ox, oy, Math.cos(a) * sp, Math.sin(a) * sp, 0, p.id, w.dmg * dmgMul * (p.ads ? 1.2 : 1), multi ? 4 : 0, w.life || 0.9, w.pierce, w.coverMul);
-          }
-          s.ammo--; s.cd = w.rate; s.lastShot = R.t;
-          s.bloom = Math.min(w.bloomMax, s.bloom + w.bloomAdd);
-          if (w.selfKnock) body.vx -= Math.cos(aim) * w.selfKnock;
-          if (s.ammo <= 0) this.startReload(p);
-        } else if (pressed & B.FIRE) this.startReload(p);
+      if (trig && s.cd <= 0 && s.reloadT <= 0 && !(s.burst > 0)) {
+        if (s.ammo > 0) { fire(); s.cd = w.rate; if (w.burst > 1) { s.burst = w.burst - 1; s.burstT = 0.07; } }
+        else if (pressed & B.FIRE) this.startReload(p);
       }
     } else if (w.blade) {
-      // Cuerpo a cuerpo parametrizado (dagas gemelas, Cetro del Rey)
+      // Cuerpo a cuerpo parametrizado: combos, remate, embestida y habilidad [Q] propia de cada arma
+      const dir = Math.cos(aim) >= 0 ? 1 : -1;
+      p.meleeStun = w.stun || 0;
+      p.guard = w.altKind === 'guard' && (b & B.ALT) !== 0;
       if ((b & B.FIRE) && s.cd <= 0) {
         s.combo = (s.combo + 1) % w.combo;
         const fin = s.combo === w.combo - 1;
-        this.melee(p, w.range * (fin ? 1.2 : 1), w.height, w.dmg * (fin ? w.finMul : 1) * dmgMul, w.knock * (fin ? 1.6 : 1), w.coverMul, fin);
+        if (fin && w.lunge) body.vx = dir * 720;
+        this.melee(p, w.range * (fin ? 1.2 : 1), w.height, w.dmg * (fin ? w.finMul : 1) * dmgMul * (p.guard ? 0.6 : 1), w.knock * (fin ? 1.6 : 1), w.coverMul, fin);
         s.cd = w.rate * (fin ? 1.4 : 1);
         this.emit(['sw', p.id, Math.round(aim * 100), fin ? 1 : 0], body.x, body.y);
       }
-      if ((pressed & B.ALT) && s.altCd <= 0) {
+      if ((pressed & B.ALT) && s.altCd <= 0 && w.altKind !== 'guard') {
         s.altCd = w.altCd;
-        for (let i = 0; i < w.altShots; i++) {
+        const k = w.altKind, d2 = w.altDmg * dmgMul, mx = body.x + body.w / 2, my = body.y + body.h / 2;
+        if (k === 'launch') { body.vy = -760; this.melee(p, w.range, w.height * 1.6, d2, w.knock, w.coverMul, true); }
+        else if (k === 'shell') this.explode(mx + dir * w.range * 0.8, my, 110, d2, 'player', p);
+        else if (k === 'kick') this.melee(p, 60, 50, d2, 900, 2, true);
+        else if (k === 'spin') { const a0 = p.aim; p.aim = 0; this.melee(p, w.range, w.height, d2, w.knock, w.coverMul, true); p.aim = Math.PI; this.melee(p, w.range, w.height, d2, w.knock, w.coverMul, true); p.aim = a0; }
+        else if (k === 'throw') this.spawnBullet(mx, my - 4, Math.cos(aim) * 1500, Math.sin(aim) * 1500, 0, p.id, d2, 0, 0.7, 1, 1);
+        else for (let i = 0; i < Math.max(1, w.altShots); i++) {
           const a = aim + (i - (w.altShots - 1) / 2) * 0.16;
-          this.spawnBullet(body.x + body.w / 2, body.y + body.h / 2 - 4, Math.cos(a) * 950, Math.sin(a) * 950, 0, p.id, w.altDmg * dmgMul, 3, 0.5, 2, 1.5);
+          this.spawnBullet(mx, my - 4, Math.cos(a) * 950, Math.sin(a) * 950, 0, p.id, d2, 3, 0.5, 2, 1.5);
         }
+        if (k !== 'wave' && k !== 'throw') this.emit(['sw', p.id, Math.round(aim * 100), 1], body.x, body.y);
       }
     } else {
       if ((pressed & B.ALT) && s.altCd <= 0) {
@@ -1413,7 +1468,7 @@ class Room {
     const hx = dir > 0 ? cx : cx - range;
     const hy = cy - height / 2;
     const hits = this.queryEnemies(hx, hy, range, height, this._meleeOut || (this._meleeOut = []));
-    for (const e of hits.slice()) this.damageEnemy(e, dmg, p, cx, cy, { knock, dir, heavy });
+    for (const e of hits.slice()) { const r = this.damageEnemy(e, dmg, p, cx, cy, { knock, dir, heavy }); if (p.meleeStun && r !== 'shield' && e.type !== 'heart' && !e.dead) e.stunT = Math.max(e.stunT || 0, e.type === 'warden' ? p.meleeStun * 0.3 : p.meleeStun); }
     if (this.pvp) this.pvpMelee(p, hx, hy, range, height, dmg);
     const L = this.run.L;
     for (const cv of L.covers) {
@@ -1424,6 +1479,7 @@ class Room {
 
   damageEnemy(e, dmg, p, hx, hy, o) {
     if (e.dead) return 'dead';
+    if (e.invuln) { this.emit(['h', e.id, 0, 5, 0]); return 'immune'; }   // jefe bajo tierra / en transición de fase
     const R = this.run;
     o = o || {};
     if (!o.noShield && Enemies.shieldBlocks(e, hx, hy)) {
@@ -1608,7 +1664,10 @@ class Room {
     const bl = R.pool.pop() || { hits: [] };
     bl.id = R.nextBid++; bl.x = x; bl.y = y; bl.vx = vx; bl.vy = vy; bl.team = team; bl.owner = owner;
     bl.dmg = dmg; bl.kind = kind; bl.life = life; bl.pierce = pierce || 0; bl.coverMul = coverMul || 1;
-    bl.bounce = 0; bl.hits.length = 0; bl.dead = false; bl.passCover = false; bl.gstun = false;
+    bl.bounce = 0; bl.hits.length = 0; bl.dead = false; bl.passCover = false; bl.gstun = false; bl.boom = 0; bl.stun = 0;
+    // Lag compensation: proyectil de jugador adelantado ½ RTT (máx. 100 ms) para que impacte donde el tirador apuntó
+    const sh = team === 0 && kind !== 2 && owner ? this.playerById(owner) : null;
+    bl.ff = sh && sh.rtt ? Math.min(0.1, sh.rtt / 2000) : 0;
     R.bullets.push(bl);
     this.emit(['b', bl.id, Math.round(x), Math.round(y), Math.round(vx), Math.round(vy), kind, team, owner, kind === 2 ? Math.round(life * 100) : 0], x, y);
     return bl;
@@ -1620,7 +1679,7 @@ class Room {
       const p = this.playerById(bl.owner);
       if (bl.gstun) this.stunBlast(bl.x, bl.y, p);
       else this.explode(bl.x, bl.y, 120, bl.dmg, 'player', p, 'gren');
-    }
+    } else if (bl.boom) this.explode(bl.x, bl.y, bl.boom, bl.dmg * 0.8, 'player', this.playerById(bl.owner));   // cohetes y virotes explosivos
     this.emit(['bx', bl.id, Math.round(bl.x), Math.round(bl.y), code], bl.x, bl.y);
   }
 
@@ -1632,10 +1691,11 @@ class Room {
       bl.life -= dt;
       if (bl.life <= 0) { this.endBullet(bl, 0); }
       else {
-        if (bl.kind === 2) bl.vy += 1400 * dt;
-        const dist = Math.hypot(bl.vx, bl.vy) * dt;
+        const sdt = dt + (bl.ff || 0); bl.ff = 0;
+        if (bl.kind === 2) bl.vy += 1400 * sdt;
+        const dist = Math.hypot(bl.vx, bl.vy) * sdt;
         const steps = Math.max(1, Math.ceil(dist / 12));
-        const sx = bl.vx * dt / steps, sy = bl.vy * dt / steps;
+        const sx = bl.vx * sdt / steps, sy = bl.vy * sdt / steps;
         for (let s = 0; s < steps && !bl.dead; s++) {
           bl.x += sx; bl.y += sy;
           if (Phys.pointSolid(L, bl.x, bl.y)) {
@@ -1659,6 +1719,7 @@ class Room {
               const owner = this.playerById(bl.owner);
               const r = this.damageEnemy(e, bl.dmg, owner, bl.x - sx * 2, bl.y - sy * 2, { knock: bl.kind === 4 ? 70 : 40, dir: Math.sign(bl.vx) || 1 });
               bl.hits.push(e.id);
+              if (bl.stun && r !== 'shield' && e.type !== 'heart') e.stunT = Math.max(e.stunT || 0, e.type === 'warden' ? bl.stun * 0.3 : bl.stun);   // arco de hielo, látigo…
               if (r === 'shield') { this.endBullet(bl, 4); break; }
               if (bl.pierce > 0) bl.pierce--; else { this.endBullet(bl, 2); break; }
             }
@@ -1681,6 +1742,29 @@ class Room {
         R.bullets.pop();
         R.pool.push(bl);
       }
+    }
+  }
+
+  // ---------------------------------------------------------------- zonas con mecánica propia
+  updateZone(dt, ctx) {
+    const R = this.run, L = R.L;
+    // Conducto del subdescenso secreto: 0,6 s encima → antesala del jefe
+    if (R.prepOn && L.prep) for (const p of ctx.alivePlayers) {
+      const on = Math.abs(p.b.x + p.b.w / 2 - L.prep.x) < 34 && Math.abs(p.b.y + p.b.h - L.prep.y) < 24;
+      p.padT = on ? (p.padT || 0) + dt : 0;
+      if (p.padT > 0.6) { p.padT = 0; p.b.x = L.prep.to.x + (p.id % 4) * 20; p.b.y = L.prep.to.y; p.b.vx = p.b.vy = 0; p.b.ride = -1; this.emit(['tp', p.id]); }
+    }
+    if (L.zone === 'gemelas' && R.extract && !R.ended) {
+      // Incubadoras gemelas: cada cápsula viva pare una cría cada 9 s hasta que la destruyan
+      R.podT = (R.podT === undefined ? 4 : R.podT) - dt;
+      if (R.podT <= 0) {
+        R.podT = 9 / R.dds.aggro;
+        for (const cv of L.covers) if (cv.pod && cv.alive) { const e = this.spawnEnemy(R.rng.chance(0.5) ? 'berserker' : 'drone', cv.x + cv.w / 2, cv.y - 10, L.arena.id); if (e) this.emit(['sp', e.id]); }
+      }
+    } else if (L.zone === 'garganta') {
+      // Garganta palpitante: espasmo cada 14 s que sacude a todos (impulso hacia arriba)
+      R.pulseT = (R.pulseT === undefined ? 14 : R.pulseT) - dt;
+      if (R.pulseT <= 0) { R.pulseT = 14; for (const p of ctx.alivePlayers) if (p.b.onGround) p.b.vy = -380; this.emit(['pulse']); }
     }
   }
 
@@ -2021,7 +2105,7 @@ class Room {
       ev: R.event ? [R.event.id, Math.ceil(R.event.t)] : 0,
       mu: R.muts && R.muts.size ? [...R.muts] : 0,
       an: R.anom ? [R.anom.id, Math.ceil(R.anom.t)] : 0,
-      ec: R.evac ? Math.ceil(R.evac.t) : 0,
+      ec: R.evac ? Math.ceil(R.evac.t) : 0, pr: R.prepOn ? 1 : 0,
       al: R.allies.map(a => [Math.round(a.x), Math.round(a.y), a.fixed ? 1 : 0]),
       uav: Math.ceil(R.uavT), sh: Math.ceil(R.shieldT), orb: r1(Math.max(0, R.orbitalT)),
       st: R.strikes.map(s => [Math.round(s.x), Math.round(s.y), r1(s.t)]),
@@ -2036,7 +2120,8 @@ class Room {
     for (const p of players) {
       if (p.ghost) continue;
       let fx = p.b.x, fy = p.b.y, all = false;
-      if (p.state !== 'alive') {
+      if (p.state !== 'alive' && !this.pvp) all = true;
+      else if (p.state !== 'alive') {
         const mate = players.find(q => q.state === 'alive' && this.sameTeam(q, p)) || players.find(q => q.state === 'alive');
         if (mate) { fx = mate.b.x; fy = mate.b.y; } else all = true;
       }
